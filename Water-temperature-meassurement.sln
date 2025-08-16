@@ -3,17 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{FE360695-3F2B-1049-3887-35FBB5135923}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WaterTemperature.Api", "src\backend\WaterTemperature.Api\WaterTemperature.Api.csproj", "{30E92DA3-4C6F-2DEB-A930-CC84659061BE}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "aspire-apphost", "src\aspire\apphost\aspire-apphost.csproj", "{B6DE0676-7FD7-4C2D-9050-BF75D32496DB}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "aspire", "aspire", "{52BF7FB6-37FF-5100-EFD1-124EFF302675}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "servicedefaults", "src\aspire\servicedefaults\servicedefaults.csproj", "{9DCDFF5D-5495-43F9-8912-51C7C780CFA9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WaterTemperature.Api.Tests", "src\backend\WaterTemperature.Api.Tests\WaterTemperature.Api.Tests.csproj", "{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -61,16 +57,21 @@ Global
 		{9DCDFF5D-5495-43F9-8912-51C7C780CFA9}.Release|x64.Build.0 = Release|Any CPU
 		{9DCDFF5D-5495-43F9-8912-51C7C780CFA9}.Release|x86.ActiveCfg = Release|Any CPU
 		{9DCDFF5D-5495-43F9-8912-51C7C780CFA9}.Release|x86.Build.0 = Release|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Debug|x64.Build.0 = Debug|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Debug|x86.Build.0 = Debug|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Release|x64.ActiveCfg = Release|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Release|x64.Build.0 = Release|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Release|x86.ActiveCfg = Release|Any CPU
+		{2E8C9B7F-5A13-4B96-8E5C-AF0B36C225B0}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(NestedProjects) = preSolution
-		{FE360695-3F2B-1049-3887-35FBB5135923} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{30E92DA3-4C6F-2DEB-A930-CC84659061BE} = {FE360695-3F2B-1049-3887-35FBB5135923}
-		{B6DE0676-7FD7-4C2D-9050-BF75D32496DB} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{52BF7FB6-37FF-5100-EFD1-124EFF302675} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{9DCDFF5D-5495-43F9-8912-51C7C780CFA9} = {52BF7FB6-37FF-5100-EFD1-124EFF302675}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BD1D4059-A7EB-4EB4-82FF-28EDADA09250}
