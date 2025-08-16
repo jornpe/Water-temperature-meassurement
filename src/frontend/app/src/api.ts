@@ -5,7 +5,8 @@ export interface Temperature {
   timestamp: string
 }
 
-const base = import.meta.env.VITE_API_BASE_URL || ''
+// In Docker/runtime, Nginx proxies /api to API_BASE_URL. In dev, Vite proxy handles /api.
+const base = ''
 
 export async function getTemperatures(): Promise<Temperature[]> {
   const res = await fetch(`${base}/api/temperatures`)

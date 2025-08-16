@@ -7,8 +7,8 @@ Coding conventions and project map
   - `esp32/` — PlatformIO project placeholder
 - Prefer TypeScript on the frontend; minimal API endpoints under `/api/*`.
 - Frontend reaches backend via:
-  - Dev (Vite): proxy `/api` to `http://localhost:8080` or env `VITE_API_BASE_URL`.
-  - Containers/Prod: build with `VITE_API_BASE_URL` pointing at backend URL or configure reverse proxy.
+  - Dev (Vite): proxy `/api` to `http://localhost:8080` or env `API_PROXY_TARGET`.
+  - Containers/Prod: configure reverse proxy at runtime using `API_BASE_URL`.
 - Docker images:
   - Backend exposes 8080
   - Frontend exposes 80 (nginx)

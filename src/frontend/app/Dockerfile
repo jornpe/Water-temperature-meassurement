@@ -9,13 +9,14 @@ RUN if [ -f package-lock.json ]; then npm ci; \
     elif [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
     else npm i; fi
 COPY . .
-ARG VITE_API_BASE_URL
-ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
-RUN echo "Building with VITE_API_BASE_URL=${VITE_API_BASE_URL}" && npm run build
+RUN npm run build
 
 # Run stage - serve static with nginx
 FROM nginx:1.27-alpine AS run
+RUN apk add --no-cache gettext
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/entrypoint.sh"]
