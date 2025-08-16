@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./src/backend
+      dockerfile: WaterTemperature.Api/Dockerfile
+    image: water-temp/backend:local
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - PORT=8080
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ./src/frontend/app
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=http://backend:8080
+    image: water-temp/frontend:local
+    environment:
+      # Used at build time for API base URL. For dev with compose, backend is reachable on http://backend:8080
+      - VITE_API_BASE_URL=http://backend:8080
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+    # If you host behind reverse proxy, change published port accordingly

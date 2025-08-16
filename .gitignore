@@ -52,3 +52,29 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Node / Frontend
+node_modules/
+dist/
+.vite/
+.eslintcache
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+
+# PlatformIO
+.pio/
+.ccls-cache/
+.vscode/.browse.VC.db*
+
+# Docker
+**/.docker-cache/
+**/.dockerignore-local
+
+# macOS & IDE
+.DS_Store
+Icon?
+.idea/
+.vscode/
