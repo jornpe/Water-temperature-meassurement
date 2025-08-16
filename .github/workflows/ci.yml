@@ -81,7 +81,7 @@ jobs:
       - name: Build backend image
         uses: docker/build-push-action@v6
         with:
-          context: ./src/backend
+          context: .
           file: ./src/backend/WaterTemperature.Api/Dockerfile
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |

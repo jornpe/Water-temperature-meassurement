@@ -1,11 +1,10 @@
 using Microsoft.AspNetCore.Http.Json;
-using Microsoft.Extensions.Hosting;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add common Aspire service defaults (telemetry, health, discovery)
-builder.AddServiceDefaults();
+// Note: Aspire service defaults are available during local dev via the servicedefaults project.
+// For container builds, keep the API self-contained to avoid cross-project Docker context issues.
 
 // Configure CORS for dev; tighten in prod via env vars
 var allowOrigins = builder.Configuration.GetValue<string>("Cors:AllowedOrigins");
@@ -36,7 +35,7 @@ var app = builder.Build();
 
 app.UseCors();
 
-// Health endpoint returning JSON for tests
+// Health endpoint returning JSON for tests (and readiness)
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).WithName("Health");
 
 // Dummy temperatures endpoint

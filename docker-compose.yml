@@ -3,8 +3,8 @@ version: '3.8'
 services:
   backend:
     build:
-      context: ./src/backend
-      dockerfile: WaterTemperature.Api/Dockerfile
+      context: .
+      dockerfile: src/backend/WaterTemperature.Api/Dockerfile
     image: water-temp/backend:local
     environment:
       - ASPNETCORE_ENVIRONMENT=Development

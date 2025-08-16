@@ -7,7 +7,5 @@
     <RootNamespace>WaterTemperature.Api</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="../../aspire/servicedefaults/servicedefaults.csproj" />
-  </ItemGroup>
+  <!-- Keep API self-contained for container builds. Aspire servicedefaults not required. -->
 </Project>
