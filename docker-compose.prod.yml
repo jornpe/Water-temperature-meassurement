@@ -15,6 +15,7 @@ services:
       # If the frontend is built with a static base, this can be empty.
       # Build-time arg VITE_API_BASE_URL should be set to your backend URL.
       - NGINX_PORT=80
+      - VITE_API_BASE_URL=http://backend:8080
     depends_on:
       - backend
     ports:
