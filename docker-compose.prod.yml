@@ -1,13 +1,17 @@
-version: '3.8'
-
 services:
   backend:
     image: ghcr.io/jornpe/water-temp-backend:latest
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - PORT=8080
+      - ConnectionStrings__Default=Host=db;Port=5432;Database=watertemp;Username=app;Password=${POSTGRES_PASSWORD:?set in env}
+      - JWT__Secret=${JWT_SECRET:?set in env}
+      - Database__AutoCreate=${DATABASE_AUTO_CREATE:-false}
     ports:
       - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     image: ghcr.io/jornpe/water-temp-frontend:latest
@@ -19,3 +23,21 @@ services:
       - backend
     ports:
       - "80:80"
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=watertemp
+      - POSTGRES_USER=app
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set in env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d watertemp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:

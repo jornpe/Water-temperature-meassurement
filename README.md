@@ -34,6 +34,25 @@ This repository is a small monorepo with a .NET backend API and a React + Vite f
 	- `docker-compose.yml` for local composition
 	- `docker-compose.prod.yml` for production-like composition
 
+## Database & Auth
+
+- Postgres is included as `db` in Compose (16-alpine), with a named volume `db-data`.
+- The backend uses EF Core with Npgsql. On dev Compose, `Database__AutoCreate=true` bootstraps the schema.
+- Local user auth is built-in with a single admin user stored in the DB:
+	- First-time: frontend will show Register when no users exist; creates the only admin.
+	- Subsequent sessions: Login page issues a JWT for API access.
+	- Backend enforces single-user on `/api/auth/register` (409 when a user exists).
+
+### Important environment variables
+
+- Backend
+	- `ConnectionStrings__Default` e.g. `Host=db;Port=5432;Database=watertemp;Username=app;Password=...`
+	- `JWT__Secret` secret for signing JWTs (set a strong value in prod)
+	- `Database__AutoCreate` set `true` to auto-create schema (dev only)
+- Frontend
+	- Dev proxy: `API_PROXY_TARGET` (Vite) default `http://localhost:8080`
+	- Container: `API_BASE_URL` for nginx to proxy `/api` at runtime (default `http://backend:8080`)
+
 ## Configuration Contracts
 
 - API base path: all backend endpoints under `/api/*`

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -9,8 +7,15 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - PORT=8080
+      - ConnectionStrings__Default=Host=db;Port=5432;Database=watertemp;Username=app;Password=appsecret;Pooling=true;KeepAlive=30
+      - JWT__Secret=dev-super-secret-change-me-NOT-FOR-PROD-please-rotate-0123456789abcdef0123456789abcdef
+      # Auto-create database schema for local dev (EF EnsureCreated)
+      - Database__AutoCreate=true
     ports:
       - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     build:
@@ -25,3 +30,23 @@ services:
     ports:
       - "5173:80"
     # If you host behind reverse proxy, change published port accordingly
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=watertemp
+      - POSTGRES_USER=app
+      - POSTGRES_PASSWORD=appsecret
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d watertemp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+volumes:
+  db-data:
