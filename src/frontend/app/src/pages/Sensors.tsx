@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { getTemperatures, type Temperature, usersExist, authHeader } from './api'
+import { getTemperatures, type Temperature, usersExist, authHeader } from '../api'
 import { useNavigate } from 'react-router-dom'
-import MainLayout from './components/MainLayout'
-import SensorsContent from './components/SensorsContent'
+import SensorsContent from '../components/SensorsContent'
+import { Box, CircularProgress, Alert } from '@mui/material'
 
-export default function App() {
+export default function Sensors() {
   const [data, setData] = useState<Temperature[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -27,11 +27,11 @@ export default function App() {
     // Load temperature data
     getTemperatures()
       .then(setData)
-      .catch(setError)
+      .catch((err) => setError(err.message || 'Failed to load temperature data'))
       .finally(() => setLoading(false))
   }, [navigate])
 
-  // Convert Temperature data to match Dashboard's expected format
+  // Convert Temperature data to match expected format
   const temperatures = data.map(temp => ({
     id: temp.id,
     value: temp.celsius,
@@ -41,23 +41,29 @@ export default function App() {
 
   if (loading) {
     return (
-      <MainLayout>
-        <SensorsContent temperatures={[]} />
-      </MainLayout>
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          minHeight: '400px' 
+        }}
+      >
+        <CircularProgress />
+      </Box>
     )
   }
 
   if (error) {
     return (
-      <MainLayout>
+      <Box sx={{ p: 2 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
         <SensorsContent temperatures={[]} />
-      </MainLayout>
+      </Box>
     )
   }
 
-  return (
-    <MainLayout>
-      <SensorsContent temperatures={temperatures} />
-    </MainLayout>
-  )
+  return <SensorsContent temperatures={temperatures} />
 }

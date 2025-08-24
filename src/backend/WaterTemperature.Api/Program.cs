@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text.Json.Serialization;
 using System.Text;
+using System.Text.RegularExpressions;
 using WaterTemperature.Api.Data;
 using WaterTemperature.Api.Configuration;
 
@@ -183,8 +184,19 @@ app.MapPost("/api/auth/register", async (AppDbContext db, RegisterRequest req) =
     if (username.Length < 3 || username.Length > 50)
         return Results.BadRequest(new { message = "Username must be between 3-50 characters" });
 
+    // Email validation (if provided)
+    if (!string.IsNullOrWhiteSpace(req.Email) && !IsValidEmail(req.Email))
+        return Results.BadRequest(new { message = "Invalid email format" });
+
     var hash = BCrypt.Net.BCrypt.HashPassword(req.Password, workFactor: authSettings.BcryptWorkFactor);
-    var user = new User { UserName = username, PasswordHash = hash };
+    var user = new User 
+    { 
+        UserName = username, 
+        PasswordHash = hash,
+        Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim(),
+        FirstName = string.IsNullOrWhiteSpace(req.FirstName) ? null : req.FirstName.Trim(),
+        LastName = string.IsNullOrWhiteSpace(req.LastName) ? null : req.LastName.Trim()
+    };
     db.Users.Add(user);
     await db.SaveChangesAsync();
     return Results.Created($"/api/auth/users/{user.Id}", new { id = user.Id, userName = user.UserName });
@@ -212,8 +224,69 @@ app.MapPost("/api/auth/login", async (AppDbContext db, LoginRequest req) =>
         signingCredentials: creds
     );
     var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(jwt);
-    return Results.Ok(new { token, expiresIn = jwtSettings.TokenLifetimeHours * 3600 });
+    var profile = new UserProfileResponse(user.Id, user.UserName, user.Email, user.FirstName, user.LastName, user.ProfilePicture, user.CreatedAt);
+    return Results.Ok(new { token, expiresIn = jwtSettings.TokenLifetimeHours * 3600, profile });
 });
+
+// Profile management endpoints
+app.MapGet("/api/profile", async (AppDbContext db, HttpContext context) =>
+{
+    var userId = GetUserIdFromClaims(context);
+    if (userId == null) return Results.Unauthorized();
+
+    var user = await db.Users.FindAsync(userId);
+    if (user is null) return Results.NotFound();
+
+    var profile = new UserProfileResponse(user.Id, user.UserName, user.Email, user.FirstName, user.LastName, user.ProfilePicture, user.CreatedAt);
+    return Results.Ok(profile);
+}).RequireAuthorization();
+
+app.MapPut("/api/profile", async (AppDbContext db, HttpContext context, UpdateProfileRequest req) =>
+{
+    var userId = GetUserIdFromClaims(context);
+    if (userId == null) return Results.Unauthorized();
+
+    var user = await db.Users.FindAsync(userId);
+    if (user is null) return Results.NotFound();
+
+    // Email validation (if provided)
+    if (!string.IsNullOrWhiteSpace(req.Email) && !IsValidEmail(req.Email))
+        return Results.BadRequest(new { message = "Invalid email format" });
+
+    // Update profile fields
+    user.Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
+    user.FirstName = string.IsNullOrWhiteSpace(req.FirstName) ? null : req.FirstName.Trim();
+    user.LastName = string.IsNullOrWhiteSpace(req.LastName) ? null : req.LastName.Trim();
+    user.ProfilePicture = string.IsNullOrWhiteSpace(req.ProfilePicture) ? null : req.ProfilePicture;
+
+    await db.SaveChangesAsync();
+    
+    var profile = new UserProfileResponse(user.Id, user.UserName, user.Email, user.FirstName, user.LastName, user.ProfilePicture, user.CreatedAt);
+    return Results.Ok(profile);
+}).RequireAuthorization();
+
+app.MapPost("/api/profile/change-password", async (AppDbContext db, HttpContext context, ChangePasswordRequest req) =>
+{
+    var userId = GetUserIdFromClaims(context);
+    if (userId == null) return Results.Unauthorized();
+
+    var user = await db.Users.FindAsync(userId);
+    if (user is null) return Results.NotFound();
+
+    // Verify current password
+    if (!BCrypt.Net.BCrypt.Verify(req.CurrentPassword, user.PasswordHash))
+        return Results.BadRequest(new { message = "Current password is incorrect" });
+
+    // Validate new password
+    if (req.NewPassword.Length < authSettings.MinPasswordLength)
+        return Results.BadRequest(new { message = $"Password must be at least {authSettings.MinPasswordLength} characters long" });
+
+    // Update password
+    user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword, workFactor: authSettings.BcryptWorkFactor);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { message = "Password changed successfully" });
+}).RequireAuthorization();
 
 // Prefer standard ASP.NET URLs via ASPNETCORE_URLS; default to 8080
 if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
@@ -224,9 +297,27 @@ if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
 
 app.Run();
 
+// Helper methods
+static bool IsValidEmail(string email)
+{
+    const string emailPattern = @"^[^@\s]+@[^@\s]+\.[^@\s]+$";
+    return Regex.IsMatch(email, emailPattern);
+}
+
+static int? GetUserIdFromClaims(HttpContext context)
+{
+    var userIdClaim = context.User.FindFirst("sub")?.Value;
+    return int.TryParse(userIdClaim, out var userId) ? userId : null;
+}
+
 // Expose Program for WebApplicationFactory in tests
 public partial class Program { }
 
 // Minimal request records
-public record RegisterRequest(string UserName, string Password);
+public record RegisterRequest(string UserName, string Password, string? Email = null, string? FirstName = null, string? LastName = null);
 public record LoginRequest(string UserName, string Password);
+public record UpdateProfileRequest(string? Email, string? FirstName, string? LastName, string? ProfilePicture = null);
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+// Response models
+public record UserProfileResponse(int Id, string UserName, string? Email, string? FirstName, string? LastName, string? ProfilePicture, DateTime CreatedAt);

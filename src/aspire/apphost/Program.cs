@@ -15,7 +15,7 @@ var db = builder.AddContainer("db", "postgres:16-alpine")
 // Provide connection string to the API
 // Point to the host-mapped Postgres port
 api.WithEnvironment("ConnectionStrings__Default", "Host=localhost;Port=5433;Database=watertemp;Username=app;Password=appsecret;Pooling=true;KeepAlive=30");
-api.WithEnvironment("JWT__Secret", "dev-super-secret-change-me");
+api.WithEnvironment("JwtSettings__Secret", "base64:ZGV2LXN1cGVyLXNlY3JldC1jaGFuZ2UtbWUtTk9ULUZPUS1QUk9ELXB1dC1hLXJlYWwtc2VjcmV0LWhlcmUtMzItYnl0ZXMtbWluaW11bQ==");
 api.WithEnvironment("Database__AutoCreate", "true");
 
 // Frontend (Vite) running inside a Node container with a bind mount for live dev
