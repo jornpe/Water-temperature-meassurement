@@ -152,7 +152,7 @@ app.MapGet("/api/temperatures", () =>
     {
         id = i + 1,
         sensor = $"sensor-{i + 1}",
-        celsius = Math.Round(15 + rnd.NextDouble() * 10, 2),
+        celsius = Math.Round(14 + rnd.NextDouble() * 10, 2),
         timestamp = DateTimeOffset.UtcNow
     });
     return Results.Ok(data);
