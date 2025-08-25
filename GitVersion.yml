@@ -1,8 +1,8 @@
 mode: ContinuousDeployment
 tag-prefix: 'v'
-major-version-bump-message: 'BREAKING CHANGE|feat!|fix!'
-minor-version-bump-message: '^feat'
-patch-version-bump-message: '^fix|^chore|^docs|^style|^refactor|^perf|^test|^build|^ci'
+major-version-bump-message: '(BREAKING CHANGE|feat!:|fix!:)'
+minor-version-bump-message: '^feat(\(.+\))?:'
+patch-version-bump-message: '^(fix|chore|docs|style|refactor|perf|test|build|ci)(\(.+\))?:'
 no-bump-message: '\+semver:\s?(none|skip)'
 commit-message-incrementing: Enabled
 branches:
