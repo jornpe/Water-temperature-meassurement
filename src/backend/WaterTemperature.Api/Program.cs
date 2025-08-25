@@ -215,11 +215,10 @@ app.MapPost("/api/auth/login", async (AppDbContext db, LoginRequest req) =>
     var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
     var expiry = DateTime.UtcNow.AddHours(jwtSettings.TokenLifetimeHours);
     var jwt = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
-        claims: new[] { 
+        claims: [ 
             new System.Security.Claims.Claim("sub", user.Id.ToString()), 
-            new System.Security.Claims.Claim("name", user.UserName),
-            new System.Security.Claims.Claim("iat", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), System.Security.Claims.ClaimValueTypes.Integer64)
-        },
+            new System.Security.Claims.Claim("name", user.UserName)
+        ],
         expires: expiry,
         signingCredentials: creds
     );
@@ -306,7 +305,7 @@ static bool IsValidEmail(string email)
 
 static int? GetUserIdFromClaims(HttpContext context)
 {
-    var userIdClaim = context.User.FindFirst("sub")?.Value;
+    var userIdClaim = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     return int.TryParse(userIdClaim, out var userId) ? userId : null;
 }
 
