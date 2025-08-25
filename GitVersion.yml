@@ -1,0 +1,27 @@
+mode: ContinuousDeployment
+tag-prefix: 'v'
+major-version-bump-message: 'BREAKING CHANGE|feat!|fix!'
+minor-version-bump-message: '^feat'
+patch-version-bump-message: '^fix|^chore|^docs|^style|^refactor|^perf|^test|^build|^ci'
+no-bump-message: '\+semver:\s?(none|skip)'
+commit-message-incrementing: Enabled
+branches:
+  main:
+    increment: Patch
+    regex: ^master$|^main$
+  develop:
+    increment: Minor
+    regex: ^dev(elop)?(ment)?$
+    label: alpha
+  feature:
+    increment: Inherit
+    regex: ^features?[/-]
+    label: feature
+  pull-request:
+    increment: Inherit
+    regex: ^(pull|pull\-requests|pr)[/-]
+    label: PullRequest
+  hotfix:
+    increment: Patch
+    regex: ^hotfix(es)?[/-]
+    label: beta
