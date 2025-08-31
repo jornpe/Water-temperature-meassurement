@@ -9,8 +9,8 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import MenuContent from './MenuContent';
 import OptionsMenu from './OptionsMenu';
-import { getCurrentUser, type UserProfile } from '../api';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const drawerWidth = 240;
 
@@ -26,17 +26,8 @@ const Drawer = styled(MuiDrawer)({
 });
 
 export default function SideMenu() {
-  const [user, setUser] = React.useState<UserProfile | null>(getCurrentUser());
   const navigate = useNavigate();
-
-  React.useEffect(() => {
-    const handleStorageChange = () => {
-      setUser(getCurrentUser());
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+  const { user } = useAuth();
 
   const handleProfileClick = () => {
     navigate('/profile');

@@ -4,11 +4,8 @@ import {
   Button,
   Card,
   CardContent,
-  Checkbox,
   Container,
-  Divider,
   FormControl,
-  FormControlLabel,
   Link,
   Stack,
   TextField,
@@ -19,8 +16,6 @@ import {
 import {
   Visibility,
   VisibilityOff,
-  Google as GoogleIcon,
-  GitHub as GitHubIcon,
 } from '@mui/icons-material';
 import { registerAdmin, usersExist } from '../api';
 import { useNavigate } from 'react-router-dom';
@@ -34,7 +29,6 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -52,11 +46,6 @@ export default function Register() {
     // Validation
     if (password !== confirmPassword) {
       setError('Passwords do not match');
-      return;
-    }
-
-    if (!agreedToTerms) {
-      setError('You must agree to the Terms of Service and Privacy Policy');
       return;
     }
 
@@ -243,38 +232,6 @@ export default function Register() {
                     }}
                   />
 
-                  {/* Terms and Conditions */}
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={agreedToTerms}
-                        onChange={(e) => setAgreedToTerms(e.target.checked)}
-                        size="small"
-                        required
-                      />
-                    }
-                    label={
-                      <Typography variant="body2" color="text.secondary">
-                        I agree to the{' '}
-                        <Link
-                          href="#"
-                          color="primary"
-                          sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-                        >
-                          Terms of Service
-                        </Link>{' '}
-                        and{' '}
-                        <Link
-                          href="#"
-                          color="primary"
-                          sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-                        >
-                          Privacy Policy
-                        </Link>
-                      </Typography>
-                    }
-                  />
-
                   {/* Sign Up Button */}
                   <Button
                     type="submit"
@@ -294,49 +251,6 @@ export default function Register() {
                   </Button>
                 </Stack>
               </Box>
-
-              {/* Divider */}
-              <Divider sx={{ my: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  OR
-                </Typography>
-              </Divider>
-
-              {/* Social Sign Up (Placeholder) */}
-              <Stack spacing={1}>
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  startIcon={<GoogleIcon />}
-                  sx={{
-                    py: 1.5,
-                    borderRadius: 2,
-                    borderColor: 'divider',
-                    color: 'text.primary',
-                    '&:hover': {
-                      backgroundColor: 'action.hover',
-                    },
-                  }}
-                >
-                  Sign up with Google
-                </Button>
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  startIcon={<GitHubIcon />}
-                  sx={{
-                    py: 1.5,
-                    borderRadius: 2,
-                    borderColor: 'divider',
-                    color: 'text.primary',
-                    '&:hover': {
-                      backgroundColor: 'action.hover',
-                    },
-                  }}
-                >
-                  Sign up with GitHub
-                </Button>
-              </Stack>
 
               {/* Sign in link */}
               <Box textAlign="center">

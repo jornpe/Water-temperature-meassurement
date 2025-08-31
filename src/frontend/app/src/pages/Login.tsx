@@ -4,11 +4,8 @@ import {
   Button,
   Card,
   CardContent,
-  Checkbox,
   Container,
-  Divider,
   FormControl,
-  FormControlLabel,
   Link,
   Stack,
   TextField,
@@ -19,20 +16,19 @@ import {
 import {
   Visibility,
   VisibilityOff,
-  Google as GoogleIcon,
-  GitHub as GitHubIcon,
 } from '@mui/icons-material';
 import { login, usersExist } from '../api';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login: authLogin } = useAuth();
 
   useEffect(() => {
     usersExist().then((exists) => {
@@ -45,7 +41,8 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      await login(userName, password);
+      const user = await login(userName, password);
+      authLogin(user); // Update auth context
       navigate('/', { replace: true });
     } catch (e: any) {
       setError('Invalid credentials');
@@ -149,32 +146,6 @@ export default function Login() {
                     }}
                   />
 
-                  {/* Remember me and Forgot password */}
-                  <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                  >
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={rememberMe}
-                          onChange={(e) => setRememberMe(e.target.checked)}
-                          size="small"
-                        />
-                      }
-                      label="Remember me"
-                    />
-                    <Link
-                      href="#"
-                      variant="body2"
-                      color="primary"
-                      sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-                    >
-                      Forgot password?
-                    </Link>
-                  </Stack>
-
                   {/* Sign In Button */}
                   <Button
                     type="submit"
@@ -194,49 +165,6 @@ export default function Login() {
                   </Button>
                 </Stack>
               </Box>
-
-              {/* Divider */}
-              <Divider sx={{ my: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  OR
-                </Typography>
-              </Divider>
-
-              {/* Social Sign In (Placeholder) */}
-              <Stack spacing={1}>
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  startIcon={<GoogleIcon />}
-                  sx={{
-                    py: 1.5,
-                    borderRadius: 2,
-                    borderColor: 'divider',
-                    color: 'text.primary',
-                    '&:hover': {
-                      backgroundColor: 'action.hover',
-                    },
-                  }}
-                >
-                  Continue with Google
-                </Button>
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  startIcon={<GitHubIcon />}
-                  sx={{
-                    py: 1.5,
-                    borderRadius: 2,
-                    borderColor: 'divider',
-                    color: 'text.primary',
-                    '&:hover': {
-                      backgroundColor: 'action.hover',
-                    },
-                  }}
-                >
-                  Continue with GitHub
-                </Button>
-              </Stack>
 
               {/* Sign up link */}
               <Box textAlign="center">

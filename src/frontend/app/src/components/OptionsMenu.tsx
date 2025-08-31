@@ -7,13 +7,14 @@ import Typography from '@mui/material/Typography';
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
-import { logout } from '../api';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function OptionsMenu() {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation(); // Prevent event bubbling to parent
@@ -31,7 +32,6 @@ export default function OptionsMenu() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
     handleClose();
   };
 

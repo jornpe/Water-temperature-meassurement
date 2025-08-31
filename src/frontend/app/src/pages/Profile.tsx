@@ -22,11 +22,12 @@ import {
   VisibilityOff,
   PhotoCamera,
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
-import { getUserProfile, updateProfile, changePassword, getCurrentUser, authHeader, type UserProfile, type UpdateProfileData, type ChangePasswordData } from '../api';
+import { getUserProfile, updateProfile, changePassword, type UpdateProfileData, type ChangePasswordData } from '../api';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Profile() {
-  const [profile, setProfile] = useState<UserProfile | null>(getCurrentUser());
+  const { user, refreshUser } = useAuth();
+  const [profile, setProfile] = useState(user);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -42,64 +43,33 @@ export default function Profile() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const navigate = useNavigate();
 
   useEffect(() => {
-    // Check authentication first
-    const hasToken = !!authHeader().Authorization;
-    console.log('Profile component: hasToken =', hasToken);
-    
-    if (!hasToken) {
-      console.log('Profile component: No token, redirecting to login');
-      navigate('/login', { replace: true });
-      return;
-    }
-
     const loadProfile = async () => {
       try {
-        // Try to get profile from localStorage first
-        const cachedProfile = getCurrentUser();
-        console.log('Profile component: Cached profile =', cachedProfile);
-        
-        if (cachedProfile) {
-          setProfile(cachedProfile);
-          setFirstName(cachedProfile.firstName || '');
-          setLastName(cachedProfile.lastName || '');
-          setEmail(cachedProfile.email || '');
-          setProfilePicture(cachedProfile.profilePicture);
+        // Use cached profile from auth context first
+        if (user) {
+          setProfile(user);
+          setFirstName(user.firstName || '');
+          setLastName(user.lastName || '');
+          setEmail(user.email || '');
+          setProfilePicture(user.profilePicture);
         }
 
         // Then try to fetch fresh data from API
-        console.log('Profile component: Fetching fresh profile from API...');
         const userProfile = await getUserProfile();
-        console.log('Profile component: Fresh profile =', userProfile);
-        
         setProfile(userProfile);
         setFirstName(userProfile.firstName || '');
         setLastName(userProfile.lastName || '');
         setEmail(userProfile.email || '');
         setProfilePicture(userProfile.profilePicture);
+        await refreshUser(); // Update auth context with fresh data
       } catch (e: any) {
         console.error('Profile load error:', e);
-        
-        // If we have cached data, use it and show a warning
-        const cachedProfile = getCurrentUser();
-        if (cachedProfile) {
-          setProfile(cachedProfile);
-          setFirstName(cachedProfile.firstName || '');
-          setLastName(cachedProfile.lastName || '');
-          setEmail(cachedProfile.email || '');
-          setProfilePicture(cachedProfile.profilePicture);
+        if (user) {
           setError('Could not sync with server. Showing cached profile data.');
         } else {
-          // Only redirect to login if we have no cached data and get auth errors
-          if (e.message.includes('401') || e.message.includes('Failed to get profile')) {
-            console.log('Profile component: Auth error, redirecting to login');
-            navigate('/login', { replace: true });
-            return;
-          } else {
-            setError('Failed to load profile. Please try again.');
-          }
+          setError('Failed to load profile. Please try again.');
         }
       } finally {
         setProfileLoading(false);
@@ -107,7 +77,7 @@ export default function Profile() {
     };
 
     loadProfile();
-  }, [navigate]);
+  }, [user, refreshUser]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
