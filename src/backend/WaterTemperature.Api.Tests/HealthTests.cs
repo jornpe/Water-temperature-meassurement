@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace WaterTemperature.Api.Tests;
 
 /// <summary>

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using WaterTemperature.Api.Configuration;
 using WaterTemperature.Api.Data;
 using WaterTemperature.Api.Services;
+using Xunit;
 
 namespace WaterTemperature.Api.Tests.UnitTests;
 

@@ -1,16 +1,42 @@
 using Microsoft.AspNetCore.Mvc;
 using WaterTemperature.Api.Controllers;
 using WaterTemperature.Api.Models.Temperatures;
+using Xunit;
 
 namespace WaterTemperature.Api.Tests.Controllers;
 
-public class TemperaturesControllerTests
+/// <summary>
+/// Unit tests for the TemperaturesController.
+/// Implements Context7 best practices with xUnit lifecycle management.
+/// </summary>
+public class TemperaturesControllerTests : IAsyncLifetime, IDisposable
 {
-    private readonly TemperaturesController _controller;
+    private TemperaturesController _controller = null!;
 
-    public TemperaturesControllerTests()
+    /// <summary>
+    /// xUnit native setup method - called before each test method.
+    /// Creates fresh controller instance for complete test isolation.
+    /// </summary>
+    public async Task InitializeAsync()
     {
         _controller = new TemperaturesController();
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// xUnit native teardown method - called after each test method.
+    /// Ensures proper cleanup and test isolation.
+    /// </summary>
+    public async Task DisposeAsync()
+    {
+        // No async disposal needed for TemperaturesController
+        await Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        // No resources to dispose for TemperaturesController
+        GC.SuppressFinalize(this);
     }
 
     [Fact]
