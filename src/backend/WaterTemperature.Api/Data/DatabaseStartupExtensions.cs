@@ -15,6 +15,18 @@ public static class DatabaseStartupExtensions
     
     private static async Task EnsureDatabaseAsync(this AppDbContext dbContext, ILogger logger)
     {
+        // Check if using InMemory provider (for testing)
+        var isInMemory = dbContext.Database.ProviderName?.Contains("InMemory") == true;
+        
+        if (isInMemory)
+        {
+            logger.LogInformation("Using InMemory database provider. Ensuring database is created...");
+            await dbContext.Database.EnsureCreatedAsync();
+            logger.LogInformation("InMemory database created successfully.");
+            return;
+        }
+        
+        // For relational databases, use execution strategy and migrations
         var strategy = dbContext.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
         {
