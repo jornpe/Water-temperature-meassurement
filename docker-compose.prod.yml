@@ -1,6 +1,7 @@
 services:
   backend:
     image: ghcr.io/jornpe/water-temp-backend:latest
+    restart: unless-stopped
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - PORT=8080
@@ -38,6 +39,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Optional: Automatic database backups (uncomment if desired)
+  # db-backup:
+  #   image: postgres:16-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     - PGPASSWORD=${POSTGRES_PASSWORD:?set in env}
+  #   volumes:
+  #     - db-data:/var/lib/postgresql/data:ro
+  #     - ./backups:/backups
+  #   command: >
+  #     sh -c "while true; do
+  #       pg_dump -h db -U app -d watertemp > /backups/backup_$$(date +%Y%m%d_%H%M%S).sql;
+  #       find /backups -name '*.sql' -mtime +7 -delete;
+  #       sleep 86400;
+  #     done"
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
 
 volumes:
   db-data:

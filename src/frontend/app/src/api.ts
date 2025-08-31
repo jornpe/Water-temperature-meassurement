@@ -79,7 +79,7 @@ export async function login(userName: string, password: string): Promise<UserPro
 }
 
 export async function getUserProfile(): Promise<UserProfile> {
-  const res = await fetch(`${base}/api/profile`, {
+  const res = await fetch(`${base}/api/auth/profile`, {
     headers: authHeader(),
   })
   if (!res.ok) throw new Error(`Failed to get profile ${res.status}`)
@@ -89,7 +89,7 @@ export async function getUserProfile(): Promise<UserProfile> {
 }
 
 export async function updateProfile(data: UpdateProfileData): Promise<UserProfile> {
-  const res = await fetch(`${base}/api/profile`, {
+  const res = await fetch(`${base}/api/auth/profile`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify(data),
@@ -104,7 +104,7 @@ export async function updateProfile(data: UpdateProfileData): Promise<UserProfil
 }
 
 export async function changePassword(data: ChangePasswordData): Promise<void> {
-  const res = await fetch(`${base}/api/profile/change-password`, {
+  const res = await fetch(`${base}/api/auth/profile/change-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify(data),
