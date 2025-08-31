@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getCurrentUser, authHeader, logout as apiLogout, usersExist, type UserProfile } from '../api';
 
@@ -96,17 +96,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [isAuthenticated, isLoading, navigate, location.pathname]);
 
-  const login = (userProfile: UserProfile) => {
+  const login = useCallback((userProfile: UserProfile) => {
     setUser(userProfile);
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     apiLogout(); // Clear localStorage
     setUser(null);
     navigate('/login', { replace: true });
-  };
+  }, [navigate]);
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     try {
       // This would typically fetch fresh user data from the API
       const currentUser = getCurrentUser();
@@ -118,7 +118,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // On refresh error, might want to logout
       logout();
     }
-  };
+  }, [logout]);
 
   const value: AuthContextType = {
     user,

@@ -43,27 +43,36 @@ export default function Profile() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isFormInitialized, setIsFormInitialized] = useState(false);
 
+  // Load profile data on component mount
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        // Use cached profile from auth context first
+        setProfileLoading(true);
+        
+        // Use cached profile from auth context as initial data
         if (user) {
           setProfile(user);
           setFirstName(user.firstName || '');
           setLastName(user.lastName || '');
           setEmail(user.email || '');
           setProfilePicture(user.profilePicture);
+          setIsFormInitialized(true);
         }
 
-        // Then try to fetch fresh data from API
+        // Fetch fresh data from API
         const userProfile = await getUserProfile();
         setProfile(userProfile);
-        setFirstName(userProfile.firstName || '');
-        setLastName(userProfile.lastName || '');
-        setEmail(userProfile.email || '');
-        setProfilePicture(userProfile.profilePicture);
-        await refreshUser(); // Update auth context with fresh data
+        
+        // Update form fields only if form hasn't been modified by user
+        if (!isFormInitialized || (user && !firstName && !lastName && !email)) {
+          setFirstName(userProfile.firstName || '');
+          setLastName(userProfile.lastName || '');
+          setEmail(userProfile.email || '');
+          setProfilePicture(userProfile.profilePicture);
+          setIsFormInitialized(true);
+        }
       } catch (e: any) {
         console.error('Profile load error:', e);
         if (user) {
@@ -77,7 +86,7 @@ export default function Profile() {
     };
 
     loadProfile();
-  }, [user, refreshUser]);
+  }, []); // Only run once on mount
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,6 +104,10 @@ export default function Profile() {
       
       const updatedProfile = await updateProfile(updateData);
       setProfile(updatedProfile);
+      
+      // Refresh the auth context with updated profile data
+      refreshUser();
+      
       setSuccess('Profile updated successfully!');
     } catch (e: any) {
       setError(e.message || 'Failed to update profile');
