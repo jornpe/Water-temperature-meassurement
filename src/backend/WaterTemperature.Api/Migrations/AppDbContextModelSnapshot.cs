@@ -52,7 +52,10 @@ namespace WaterTemperature.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("ProfilePicture")
+                    b.Property<byte[]>("ProfilePicture")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ProfilePictureContentType")
                         .HasColumnType("text");
 
                     b.Property<string>("UserName")

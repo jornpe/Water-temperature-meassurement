@@ -21,8 +21,9 @@ import {
   Visibility,
   VisibilityOff,
   PhotoCamera,
+  Delete,
 } from '@mui/icons-material';
-import { getUserProfile, updateProfile, changePassword, type UpdateProfileData, type ChangePasswordData } from '../api';
+import { getUserProfile, updateProfile, changePassword, uploadProfilePicture, deleteProfilePicture, getProfilePictureUrl, type UpdateProfileData, type ChangePasswordData } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Profile() {
@@ -31,7 +32,6 @@ export default function Profile() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-  const [profilePicture, setProfilePicture] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,6 +44,7 @@ export default function Profile() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isFormInitialized, setIsFormInitialized] = useState(false);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
 
   // Load profile data on component mount
   useEffect(() => {
@@ -57,7 +58,6 @@ export default function Profile() {
           setFirstName(user.firstName || '');
           setLastName(user.lastName || '');
           setEmail(user.email || '');
-          setProfilePicture(user.profilePicture);
           setIsFormInitialized(true);
         }
 
@@ -70,7 +70,6 @@ export default function Profile() {
           setFirstName(userProfile.firstName || '');
           setLastName(userProfile.lastName || '');
           setEmail(userProfile.email || '');
-          setProfilePicture(userProfile.profilePicture);
           setIsFormInitialized(true);
         }
       } catch (e: any) {
@@ -99,7 +98,6 @@ export default function Profile() {
         firstName: firstName.trim() || undefined,
         lastName: lastName.trim() || undefined,
         email: email.trim() || undefined,
-        profilePicture: profilePicture,
       };
       
       const updatedProfile = await updateProfile(updateData);
@@ -152,19 +150,43 @@ export default function Profile() {
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        setError('Profile picture must be less than 5MB');
-        return;
-      }
+    if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = () => {
-        setProfilePicture(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    setError(null);
+    setSuccess(null);
+    setUploadingPicture(true);
+
+    try {
+      const updatedProfile = await uploadProfilePicture(file);
+      setProfile(updatedProfile);
+      refreshUser();
+      setSuccess('Profile picture updated successfully!');
+    } catch (e: any) {
+      setError(e.message || 'Failed to upload profile picture');
+    } finally {
+      setUploadingPicture(false);
+    }
+
+    // Clear the input value to allow re-uploading the same file
+    event.target.value = '';
+  };
+
+  const handlePictureDelete = async () => {
+    setError(null);
+    setSuccess(null);
+    setUploadingPicture(true);
+
+    try {
+      const updatedProfile = await deleteProfilePicture();
+      setProfile(updatedProfile);
+      refreshUser();
+      setSuccess('Profile picture removed successfully!');
+    } catch (e: any) {
+      setError(e.message || 'Failed to remove profile picture');
+    } finally {
+      setUploadingPicture(false);
     }
   };
 
@@ -229,10 +251,10 @@ export default function Profile() {
               <Stack direction="row" alignItems="center" spacing={3}>
                 <Box position="relative">
                   <Avatar
-                    src={profilePicture}
+                    src={profile.hasProfilePicture ? getProfilePictureUrl(profile.id) : undefined}
                     sx={{ width: 100, height: 100, fontSize: '2rem' }}
                   >
-                    {!profilePicture && getAvatarText()}
+                    {!profile.hasProfilePicture && getAvatarText()}
                   </Avatar>
                   <IconButton
                     component="label"
@@ -245,17 +267,18 @@ export default function Profile() {
                       '&:hover': { bgcolor: 'primary.dark' },
                     }}
                     size="small"
+                    disabled={uploadingPicture}
                   >
                     <PhotoCamera fontSize="small" />
                     <input
                       type="file"
                       hidden
-                      accept="image/*"
-                      onChange={handleFileUpload}
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      onChange={handlePictureUpload}
                     />
                   </IconButton>
                 </Box>
-                <Box>
+                <Box sx={{ flexGrow: 1 }}>
                   <Typography variant="h5" sx={{ fontWeight: 600 }}>
                     {getDisplayName()}
                   </Typography>
@@ -265,6 +288,22 @@ export default function Profile() {
                   <Typography variant="body2" color="text.secondary">
                     Member since {new Date(profile.createdAt).toLocaleDateString()}
                   </Typography>
+                  
+                  {/* Profile Picture Actions */}
+                  {profile.hasProfilePicture && (
+                    <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        color="error"
+                        startIcon={<Delete />}
+                        onClick={handlePictureDelete}
+                        disabled={uploadingPicture}
+                      >
+                        Remove
+                      </Button>
+                    </Stack>
+                  )}
                 </Box>
               </Stack>
             </CardContent>

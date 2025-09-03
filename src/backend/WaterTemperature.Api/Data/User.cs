@@ -23,7 +23,8 @@ public class User
     [Required]
     public string PasswordHash { get; set; } = string.Empty;
     
-    public string? ProfilePicture { get; set; } // Base64 encoded image
+    public byte[]? ProfilePicture { get; set; }
+    public string? ProfilePictureContentType { get; set; }
     
     public bool IsAdmin { get; init; }
     

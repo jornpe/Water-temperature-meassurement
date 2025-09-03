@@ -21,8 +21,7 @@ public record LoginRequest(string UserName, string Password);
 public record UpdateProfileRequest(
     string? Email, 
     string? FirstName, 
-    string? LastName, 
-    string? ProfilePicture = null);
+    string? LastName);
 
 /// <summary>
 /// Request model for changing user password.
@@ -38,7 +37,7 @@ public record UserProfileResponse(
     string? Email, 
     string? FirstName, 
     string? LastName, 
-    string? ProfilePicture, 
+    bool HasProfilePicture, 
     DateTime CreatedAt);
 
 /// <summary>

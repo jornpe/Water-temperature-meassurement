@@ -95,7 +95,7 @@ public class AuthController(
             user.Email, 
             user.FirstName, 
             user.LastName, 
-            user.ProfilePicture, 
+            user.ProfilePicture != null && user.ProfilePicture.Length > 0, 
             user.CreatedAt);
         
         var response = new LoginResponse(token,  jwtSettings.Value.TokenLifetimeHours * 3600, profile);
@@ -120,7 +120,7 @@ public class AuthController(
             user.Email, 
             user.FirstName, 
             user.LastName, 
-            user.ProfilePicture, 
+            user.ProfilePicture != null && user.ProfilePicture.Length > 0, 
             user.CreatedAt);
         
         return Ok(profile);
@@ -149,7 +149,6 @@ public class AuthController(
         user.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
         user.FirstName = string.IsNullOrWhiteSpace(request.FirstName) ? null : request.FirstName.Trim();
         user.LastName = string.IsNullOrWhiteSpace(request.LastName) ? null : request.LastName.Trim();
-        user.ProfilePicture = string.IsNullOrWhiteSpace(request.ProfilePicture) ? null : request.ProfilePicture;
 
         await dbContext.SaveChangesAsync();
         
@@ -159,7 +158,7 @@ public class AuthController(
             user.Email, 
             user.FirstName, 
             user.LastName, 
-            user.ProfilePicture, 
+            user.ProfilePicture != null && user.ProfilePicture.Length > 0, 
             user.CreatedAt);
         
         return Ok(profile);
@@ -194,6 +193,90 @@ public class AuthController(
         await dbContext.SaveChangesAsync();
 
         return Ok(new MessageResponse("Password changed successfully"));
+    }
+
+    [HttpPost("profile/picture")]
+    [Authorize]
+    public async Task<IActionResult> UploadProfilePicture(IFormFile picture)
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null) 
+            return Unauthorized();
+
+        if (picture == null || picture.Length == 0)
+            return BadRequest(new MessageResponse("No image file provided"));
+
+        // Validate file size (5MB limit)
+        if (picture.Length > 5 * 1024 * 1024)
+            return BadRequest(new MessageResponse("Image file size cannot exceed 5MB"));
+
+        // Validate file type
+        var allowedTypes = new[] { "image/jpeg", "image/png", "image/gif", "image/webp" };
+        if (!allowedTypes.Contains(picture.ContentType.ToLowerInvariant()))
+            return BadRequest(new MessageResponse("Only JPEG, PNG, GIF, and WebP images are allowed"));
+
+        var user = await dbContext.Users.FindAsync(userId);
+        if (user is null) 
+            return NotFound();
+
+        // Read image data
+        using var memoryStream = new MemoryStream();
+        await picture.CopyToAsync(memoryStream);
+        
+        user.ProfilePicture = memoryStream.ToArray();
+        user.ProfilePictureContentType = picture.ContentType;
+
+        await dbContext.SaveChangesAsync();
+
+        var profile = new UserProfileResponse(
+            user.Id, 
+            user.UserName, 
+            user.Email, 
+            user.FirstName, 
+            user.LastName, 
+            user.ProfilePicture != null && user.ProfilePicture.Length > 0, 
+            user.CreatedAt);
+
+        return Ok(profile);
+    }
+
+    [HttpGet("profile/picture/{userId:int}")]
+    public async Task<IActionResult> GetProfilePicture(int userId)
+    {
+        var user = await dbContext.Users.FindAsync(userId);
+        if (user?.ProfilePicture is null || user.ProfilePicture.Length == 0)
+            return NotFound();
+
+        return File(user.ProfilePicture, user.ProfilePictureContentType ?? "image/jpeg");
+    }
+
+    [HttpDelete("profile/picture")]
+    [Authorize]
+    public async Task<IActionResult> DeleteProfilePicture()
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null) 
+            return Unauthorized();
+
+        var user = await dbContext.Users.FindAsync(userId);
+        if (user is null) 
+            return NotFound();
+
+        user.ProfilePicture = null;
+        user.ProfilePictureContentType = null;
+
+        await dbContext.SaveChangesAsync();
+
+        var profile = new UserProfileResponse(
+            user.Id, 
+            user.UserName, 
+            user.Email, 
+            user.FirstName, 
+            user.LastName, 
+            user.ProfilePicture != null && user.ProfilePicture.Length > 0, 
+            user.CreatedAt);
+
+        return Ok(profile);
     }
     
     private static bool IsValidEmail(string email)

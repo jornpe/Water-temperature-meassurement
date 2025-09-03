@@ -11,7 +11,7 @@ export interface UserProfile {
   email?: string
   firstName?: string
   lastName?: string
-  profilePicture?: string
+  hasProfilePicture: boolean
   createdAt: string
 }
 
@@ -27,7 +27,6 @@ export interface UpdateProfileData {
   email?: string
   firstName?: string
   lastName?: string
-  profilePicture?: string
 }
 
 export interface ChangePasswordData {
@@ -115,6 +114,38 @@ export async function changePassword(data: ChangePasswordData): Promise<void> {
   }
 }
 
+export async function uploadProfilePicture(file: File): Promise<UserProfile> {
+  const formData = new FormData()
+  formData.append('picture', file)
+  
+  const res = await fetch(`${base}/api/auth/profile/picture`, {
+    method: 'POST',
+    headers: authHeader(),
+    body: formData,
+  })
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ message: `Upload failed ${res.status}` }))
+    throw new Error(errorData.message || `Upload failed ${res.status}`)
+  }
+  const profile = await res.json()
+  localStorage.setItem('user', JSON.stringify(profile))
+  return profile
+}
+
+export async function deleteProfilePicture(): Promise<UserProfile> {
+  const res = await fetch(`${base}/api/auth/profile/picture`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  })
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ message: `Delete failed ${res.status}` }))
+    throw new Error(errorData.message || `Delete failed ${res.status}`)
+  }
+  const profile = await res.json()
+  localStorage.setItem('user', JSON.stringify(profile))
+  return profile
+}
+
 export function getCurrentUser(): UserProfile | null {
   const userJson = localStorage.getItem('user')
   return userJson ? JSON.parse(userJson) : null
@@ -128,4 +159,9 @@ export function logout() {
 export function authHeader(): Record<string, string> {
   const t = localStorage.getItem('token')
   return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
+export function getProfilePictureUrl(userId: number): string {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  return `${baseUrl}/api/auth/profile/picture/${userId}`
 }

@@ -12,8 +12,8 @@ using WaterTemperature.Api.Data;
 namespace WaterTemperature.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250830073000_changed-model")]
-    partial class changedmodel
+    [Migration("20250903161655_init")]
+    partial class init
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -55,7 +55,10 @@ namespace WaterTemperature.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("ProfilePicture")
+                    b.Property<byte[]>("ProfilePicture")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ProfilePictureContentType")
                         .HasColumnType("text");
 
                     b.Property<string>("UserName")

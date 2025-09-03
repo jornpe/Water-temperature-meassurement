@@ -11,6 +11,7 @@ import MenuContent from './MenuContent';
 import OptionsMenu from './OptionsMenu';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { getProfilePictureUrl } from '../api';
 
 const drawerWidth = 240;
 
@@ -96,10 +97,10 @@ export default function SideMenu() {
       >
         <Avatar
           sizes="small"
-          src={user?.profilePicture}
+          src={user?.hasProfilePicture ? getProfilePictureUrl(user.id) : undefined}
           sx={{ width: 36, height: 36 }}
         >
-          {!user?.profilePicture && getAvatarText()}
+          {!user?.hasProfilePicture && getAvatarText()}
         </Avatar>
         <Box sx={{ mr: 'auto' }}>
           <Typography variant="body2" sx={{ fontWeight: 500, lineHeight: '16px' }}>
