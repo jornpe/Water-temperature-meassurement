@@ -6,19 +6,19 @@ import Stack from '@mui/material/Stack';
 import MuiToolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
-import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
+import ThermostatIcon from '@mui/icons-material/Thermostat';
 import SideMenuMobile from './SideMenuMobile';
 import MenuButton from './MenuButton';
 import ColorModeIconDropdown from '../shared-theme/ColorModeIconDropdown';
 
 const Toolbar = styled(MuiToolbar)({
   width: '100%',
-  padding: '12px',
+  padding: '8px 16px',
   display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'start',
-  justifyContent: 'center',
-  gap: '12px',
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  minHeight: '64px',
   flexShrink: 0,
 });
 
@@ -33,41 +33,56 @@ export default function AppNavbar() {
     <AppBar
       position="fixed"
       sx={{
-        display: { xs: 'auto', md: 'none' },
+        display: { xs: 'flex', md: 'none' },
         boxShadow: 0,
         bgcolor: 'background.paper',
         backgroundImage: 'none',
         borderBottom: '1px solid',
         borderColor: 'divider',
-        top: 'var(--template-frame-height, 0px)',
+        zIndex: (theme) => theme.zIndex.drawer + 1,
       }}
     >
       <Toolbar variant="regular">
         <Stack
           direction="row"
-          sx={{
+          spacing={1}
+          sx={{ 
             alignItems: 'center',
-            flexGrow: 1,
-            width: '100%',
-            gap: 1,
+            flex: 1,
           }}
         >
-          <Stack
-            direction="row"
-            spacing={1}
-            sx={{ justifyContent: 'center', mr: 'auto' }}
+          <CustomIcon />
+          <Typography 
+            variant="h6" 
+            component="h1" 
+            sx={{ 
+              color: 'text.primary',
+              fontWeight: 600,
+              fontSize: { xs: '1.1rem', sm: '1.25rem' },
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
           >
-            <CustomIcon />
-            <Typography variant="h4" component="h1" sx={{ color: 'text.primary' }}>
-              Water Temp Monitor
-            </Typography>
-          </Stack>
+            Water Temp Monitor
+          </Typography>
+        </Stack>
+        
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <ColorModeIconDropdown />
-          <MenuButton aria-label="menu" onClick={toggleDrawer(true)}>
+          <MenuButton 
+            aria-label="Open navigation menu" 
+            onClick={toggleDrawer(true)}
+            sx={{
+              minWidth: '44px',
+              minHeight: '44px',
+            }}
+          >
             <MenuRoundedIcon />
           </MenuButton>
-          <SideMenuMobile open={open} toggleDrawer={toggleDrawer} />
         </Stack>
+        
+        <SideMenuMobile open={open} toggleDrawer={toggleDrawer} />
       </Toolbar>
     </AppBar>
   );
@@ -77,23 +92,18 @@ export function CustomIcon() {
   return (
     <Box
       sx={{
-        width: '1.5rem',
-        height: '1.5rem',
-        bgcolor: 'black',
-        borderRadius: '999px',
+        width: '2rem',
+        height: '2rem',
+        bgcolor: 'primary.main',
+        borderRadius: '8px',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        alignSelf: 'center',
-        backgroundImage:
-          'linear-gradient(135deg, hsl(210, 98%, 60%) 0%, hsl(210, 100%, 35%) 100%)',
-        color: 'hsla(210, 100%, 95%, 0.9)',
-        border: '1px solid',
-        borderColor: 'hsl(210, 100%, 55%)',
-        boxShadow: 'inset 0 2px 5px rgba(255, 255, 255, 0.3)',
+        color: 'primary.contrastText',
+        boxShadow: 1,
       }}
     >
-      <DashboardRoundedIcon color="inherit" sx={{ fontSize: '1rem' }} />
+      <ThermostatIcon sx={{ fontSize: '1.25rem' }} />
     </Box>
   );
 }

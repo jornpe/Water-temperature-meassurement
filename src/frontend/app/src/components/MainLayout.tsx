@@ -30,16 +30,18 @@ export default function MainLayout({ children }: MainLayoutProps) {
             backgroundColor: alpha(theme.palette.background.default, 1),
             overflow: 'auto',
             minHeight: '100vh',
+            // Account for AppNavbar on mobile
+            marginTop: { xs: '64px', md: 0 },
+            width: { xs: '100%', md: 'calc(100% - 240px)' },
           })}
         >
           <Stack
             spacing={2}
             sx={{
-              alignItems: 'center',
-              mx: 3,
-              pb: 5,
-              mt: { xs: 8, md: 0 },
-              minHeight: 'inherit',
+              alignItems: 'stretch',
+              mx: { xs: 2, sm: 3, md: 3 },
+              py: { xs: 2, sm: 3, md: 3 },
+              minHeight: { xs: 'calc(100vh - 64px)', md: '100vh' },
             }}
           >
             {children}

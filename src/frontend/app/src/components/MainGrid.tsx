@@ -1,5 +1,5 @@
 import * as React from 'react';
-import Grid from '@mui/material/Grid2';
+import Grid from '@mui/material/Grid';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
@@ -66,7 +66,7 @@ export default function MainGrid({ temperatures = [] }: MainGridProps) {
       </Typography>
       <Grid
         container
-        spacing={2}
+        spacing={{ xs: 2, md: 3 }}
         columns={12}
         sx={{ mb: (theme) => theme.spacing(2) }}
       >
@@ -104,7 +104,7 @@ export default function MainGrid({ temperatures = [] }: MainGridProps) {
         </Grid>
       </Grid>
 
-      <Grid container spacing={2} columns={12}>
+      <Grid container spacing={{ xs: 2, md: 3 }} columns={12}>
         <Grid size={{ xs: 12 }}>
           <Card>
             <CardContent>
@@ -112,7 +112,7 @@ export default function MainGrid({ temperatures = [] }: MainGridProps) {
                 Recent Temperature Readings
               </Typography>
               {temperatures.length > 0 ? (
-                <Stack spacing={2}>
+                <Stack spacing={1}>
                   {temperatures.slice(-10).map((temp) => (
                     <Box
                       key={temp.id}
@@ -120,16 +120,31 @@ export default function MainGrid({ temperatures = [] }: MainGridProps) {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        p: 2,
+                        p: { xs: 1.5, sm: 2 },
                         border: 1,
                         borderColor: 'divider',
                         borderRadius: 1,
+                        '&:hover': {
+                          bgcolor: 'action.hover',
+                        },
                       }}
                     >
-                      <Typography variant="body1">
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontSize: { xs: '0.875rem', sm: '1rem' },
+                        }}
+                      >
                         {new Date(temp.timestamp).toLocaleString()}
                       </Typography>
-                      <Typography variant="h6" color="primary">
+                      <Typography 
+                        variant="h6" 
+                        color="primary"
+                        sx={{ 
+                          fontSize: { xs: '1.1rem', sm: '1.25rem' },
+                          fontWeight: 600,
+                        }}
+                      >
                         {temp.value.toFixed(1)}°C
                       </Typography>
                     </Box>

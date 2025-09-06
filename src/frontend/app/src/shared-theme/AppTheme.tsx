@@ -23,15 +23,22 @@ export default function AppTheme(props: AppThemeProps) {
     return disableCustomTheme
       ? {}
       : createTheme({
-          // For more details about CSS variables configuration, see https://mui.com/material-ui/customization/css-theme-variables/configuration/
+          // CSS variables configuration for MUI v7
           cssVariables: {
-            colorSchemeSelector: 'data-mui-color-scheme',
-            cssVarPrefix: 'template',
+            colorSchemeSelector: 'class', // Use class-based color scheme selector for better performance
+            cssVarPrefix: 'water-temp', // Custom prefix for our app
           },
-          colorSchemes, // Recently added in v6 for building light & dark mode app, see https://mui.com/material-ui/customization/palette/#color-schemes
+          // Color schemes for light and dark mode
+          colorSchemes,
+          // Default to dark mode
+          defaultColorScheme: 'dark',
+          // Typography settings
           typography,
+          // Shadow definitions
           shadows,
+          // Shape configuration (border radius)
           shape,
+          // Component customizations
           components: {
             ...inputsCustomizations,
             ...dataDisplayCustomizations,
