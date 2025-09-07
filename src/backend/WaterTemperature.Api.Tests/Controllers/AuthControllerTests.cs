@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -21,6 +22,7 @@ public class AuthControllerTests : IAsyncLifetime, IDisposable
     private readonly Mock<IOptions<AuthenticationSettings>> _mockAuthSettings;
     private readonly Mock<IOptions<JwtSettings>> _mockJwtSettings;
     private readonly Mock<IJwtService> _mockJwtService;
+    private readonly Mock<IWebHostEnvironment> _mockEnvironment;
     private AppDbContext _dbContext = null!;
     private AuthController _controller = null!;
 
@@ -38,6 +40,8 @@ public class AuthControllerTests : IAsyncLifetime, IDisposable
         });
 
         _mockJwtService = new Mock<IJwtService>();
+        _mockEnvironment = new Mock<IWebHostEnvironment>();
+        _mockEnvironment.Setup(x => x.EnvironmentName).Returns("Development");
     }
 
     /// <summary>
@@ -58,7 +62,8 @@ public class AuthControllerTests : IAsyncLifetime, IDisposable
             _dbContext, 
             _mockAuthSettings.Object, 
             _mockJwtSettings.Object, 
-            _mockJwtService.Object
+            _mockJwtService.Object,
+            _mockEnvironment.Object
         );
 
         // Reset mock interactions for each test

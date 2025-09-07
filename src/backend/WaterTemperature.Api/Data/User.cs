@@ -28,5 +28,9 @@ public class User
     
     public bool IsAdmin { get; init; }
     
+    // Refresh token properties
+    public string? RefreshToken { get; set; }
+    public DateTime? RefreshTokenExpiry { get; set; }
+    
     public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 }

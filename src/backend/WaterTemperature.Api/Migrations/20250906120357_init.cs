@@ -26,6 +26,8 @@ namespace WaterTemperature.Api.Migrations
                     ProfilePicture = table.Column<byte[]>(type: "bytea", nullable: true),
                     ProfilePictureContentType = table.Column<string>(type: "text", nullable: true),
                     IsAdmin = table.Column<bool>(type: "boolean", nullable: false),
+                    RefreshToken = table.Column<string>(type: "text", nullable: true),
+                    RefreshTokenExpiry = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>

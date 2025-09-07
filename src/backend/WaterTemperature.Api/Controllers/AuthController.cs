@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,7 +18,8 @@ public class AuthController(
     AppDbContext dbContext,
     IOptions<AuthenticationSettings> authSettings,
     IOptions<JwtSettings> jwtSettings,
-    IJwtService jwtService)
+    IJwtService jwtService,
+    IWebHostEnvironment environment)
     : ApiControllerBase
 {
     [HttpGet("users/exists")]
@@ -87,8 +89,24 @@ public class AuthController(
             return Unauthorized();
         }
 
-        // Use the JWT service to create the token
-        var token = jwtService.CreateToken(user);
+        // Generate both access and refresh tokens
+        var accessToken = jwtService.CreateToken(user);
+        var refreshToken = jwtService.GenerateRefreshToken();
+        
+        // Store refresh token in database
+        user.RefreshToken = refreshToken;
+        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30); // 30 days as requested
+        await dbContext.SaveChangesAsync();
+        
+        var cookieOptions = GetCookieOptions(user);
+        
+        Response.Cookies.Append("refreshToken", refreshToken, cookieOptions);
+
+        // Debug logging
+        Console.WriteLine($"Setting refresh token cookie: {refreshToken.Substring(0, 10)}...");
+        Console.WriteLine($"Cookie expires: {user.RefreshTokenExpiry}");
+        Console.WriteLine($"Request host: {HttpContext.Request.Host}");
+
         var profile = new UserProfileResponse(
             user.Id, 
             user.UserName, 
@@ -98,8 +116,92 @@ public class AuthController(
             user.ProfilePicture != null && user.ProfilePicture.Length > 0, 
             user.CreatedAt);
         
-        var response = new LoginResponse(token,  jwtSettings.Value.TokenLifetimeHours * 3600, profile);
+        var response = new LoginResponse(accessToken, jwtSettings.Value.TokenLifetimeHours * 3600, profile);
         return Ok(response);
+    }
+
+    [HttpPost("refresh")]
+    public async Task<IActionResult> RefreshToken()
+    {
+        // Get refresh token from HttpOnly cookie
+        if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken) || string.IsNullOrEmpty(refreshToken))
+        {
+            return Unauthorized(new MessageResponse("Refresh token not found"));
+        }
+
+        // Find user by refresh token
+        var user = await dbContext.Users.FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
+        if (user == null)
+        {
+            return Unauthorized(new MessageResponse("Invalid refresh token"));
+        }
+
+        // Check if refresh token is expired
+        if (user.RefreshTokenExpiry <= DateTime.UtcNow)
+        {
+            return Unauthorized(new MessageResponse("Refresh token expired"));
+        }
+        
+        // Generate new access token
+        var newAccessToken = jwtService.CreateToken(user);
+        
+        // Rotate the refresh token
+        var newRefreshToken = jwtService.GenerateRefreshToken();
+        user.RefreshToken = newRefreshToken;
+        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+        await dbContext.SaveChangesAsync();
+        
+        // Update the refresh token cookie
+        var cookieOptions = GetCookieOptions(user);
+        
+        Response.Cookies.Append("refreshToken", newRefreshToken, cookieOptions);
+
+        Console.WriteLine("New access token generated and refresh token rotated");
+
+        var response = new RefreshTokenResponse(newAccessToken, jwtSettings.Value.TokenLifetimeHours * 3600);
+        return Ok(response);
+    }
+
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout()
+    {
+        var userId = GetCurrentUserId();
+        if (userId != null)
+        {
+            var user = await dbContext.Users.FindAsync(userId);
+            if (user != null)
+            {
+                // Clear refresh token from database
+                user.RefreshToken = null;
+                user.RefreshTokenExpiry = null;
+                await dbContext.SaveChangesAsync();
+            }
+        }
+
+        // Clear the refresh token cookie
+        Response.Cookies.Delete("refreshToken", new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = false, // Set to false for development (localhost)
+            SameSite = SameSiteMode.Lax,
+            Path = "/",
+            Domain = null
+        });
+
+        return Ok(new MessageResponse("Logged out successfully"));
+    }
+
+    [HttpGet("debug/cookies")]
+    public IActionResult DebugCookies()
+    {
+        var cookies = Request.Cookies.Select(c => new { c.Key, c.Value }).ToList();
+        return Ok(new { 
+            CookieCount = cookies.Count,
+            Cookies = cookies,
+            Host = HttpContext.Request.Host.ToString(),
+            Scheme = HttpContext.Request.Scheme
+        });
     }
 
     [HttpGet("profile")]
@@ -284,4 +386,28 @@ public class AuthController(
         const string emailPattern = @"^[^@\s]+@[^@\s]+\.[^@\s]+$";
         return Regex.IsMatch(email, emailPattern);
     }
+
+    private CookieOptions GetCookieOptions(User user)
+    {
+        if(environment.IsDevelopment())
+            return new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = false, 
+                SameSite = SameSiteMode.Lax,
+                Expires = user.RefreshTokenExpiry,
+                Path = "/", 
+                Domain = null 
+            };
+        return new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Expires = user.RefreshTokenExpiry,
+            Path = "/",
+            Domain = null
+        };
+    }
+    
 }

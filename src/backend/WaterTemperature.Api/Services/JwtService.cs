@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -11,7 +12,8 @@ namespace WaterTemperature.Api.Services;
 public interface IJwtService
 {
     string CreateToken(User user);
-
+    string GenerateRefreshToken();
+    ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);
     SymmetricSecurityKey GetSigningKey();
 }
 
@@ -48,6 +50,44 @@ public class JwtService(ILogger<JwtService> logger, IOptions<JwtSettings> jwtSet
     public SymmetricSecurityKey GetSigningKey()
     {
         return _signingKey;
+    }
+
+    public string GenerateRefreshToken()
+    {
+        var randomNumber = new byte[64];
+        using var generator = RandomNumberGenerator.Create();
+        generator.GetBytes(randomNumber);
+        return Convert.ToBase64String(randomNumber);
+    }
+
+    public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
+    {
+        var tokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateAudience = false,
+            ValidateIssuer = false,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = _signingKey,
+            ValidateLifetime = false // Important: we don't validate the lifetime here
+        };
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+        try
+        {
+            var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out var validatedToken);
+            
+            if (validatedToken is not JwtSecurityToken jwtToken || 
+                !jwtToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+            {
+                return null;
+            }
+
+            return principal;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static SymmetricSecurityKey CreateSigningKey(string jwtSecret)

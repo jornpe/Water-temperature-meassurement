@@ -1,3 +1,5 @@
+import { authenticatedFetch, setAccessToken, logoutUser, getAuthHeader } from './utils/apiClient'
+
 export interface Temperature {
   id: number
   sensor: string
@@ -38,11 +40,7 @@ export interface ChangePasswordData {
 const base = ''
 
 export async function getTemperatures(): Promise<Temperature[]> {
-  const res = await fetch(`${base}/api/temperatures`, {
-    headers: authHeader(),
-  })
-  if (!res.ok) throw new Error(`API ${res.status}`)
-  return res.json()
+  return authenticatedFetch(`${base}/api/temperatures`)
 }
 
 export async function usersExist(): Promise<boolean> {
@@ -69,79 +67,55 @@ export async function login(userName: string, password: string): Promise<UserPro
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userName, password }),
+    credentials: 'include', // Include cookies for refresh token
   })
   if (!res.ok) throw new Error('Invalid credentials')
   const data = await res.json()
-  localStorage.setItem('token', data.token)
+  
+  // Store the access token in memory and user profile in localStorage
+  setAccessToken(data.token)
   localStorage.setItem('user', JSON.stringify(data.profile))
   return data.profile
 }
 
 export async function getUserProfile(): Promise<UserProfile> {
-  const res = await fetch(`${base}/api/auth/profile`, {
-    headers: authHeader(),
-  })
-  if (!res.ok) throw new Error(`Failed to get profile ${res.status}`)
-  const profile = await res.json()
+  const profile = await authenticatedFetch(`${base}/api/auth/profile`)
   localStorage.setItem('user', JSON.stringify(profile))
   return profile
 }
 
 export async function updateProfile(data: UpdateProfileData): Promise<UserProfile> {
-  const res = await fetch(`${base}/api/auth/profile`, {
+  const profile = await authenticatedFetch(`${base}/api/auth/profile`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify(data),
   })
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ message: `Update failed ${res.status}` }))
-    throw new Error(errorData.message || `Update failed ${res.status}`)
-  }
-  const profile = await res.json()
   localStorage.setItem('user', JSON.stringify(profile))
   return profile
 }
 
 export async function changePassword(data: ChangePasswordData): Promise<void> {
-  const res = await fetch(`${base}/api/auth/profile/change-password`, {
+  await authenticatedFetch(`${base}/api/auth/profile/change-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify(data),
   })
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ message: `Password change failed ${res.status}` }))
-    throw new Error(errorData.message || `Password change failed ${res.status}`)
-  }
 }
 
 export async function uploadProfilePicture(file: File): Promise<UserProfile> {
   const formData = new FormData()
   formData.append('picture', file)
   
-  const res = await fetch(`${base}/api/auth/profile/picture`, {
+  const profile = await authenticatedFetch(`${base}/api/auth/profile/picture`, {
     method: 'POST',
-    headers: authHeader(),
     body: formData,
   })
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ message: `Upload failed ${res.status}` }))
-    throw new Error(errorData.message || `Upload failed ${res.status}`)
-  }
-  const profile = await res.json()
   localStorage.setItem('user', JSON.stringify(profile))
   return profile
 }
 
 export async function deleteProfilePicture(): Promise<UserProfile> {
-  const res = await fetch(`${base}/api/auth/profile/picture`, {
+  const profile = await authenticatedFetch(`${base}/api/auth/profile/picture`, {
     method: 'DELETE',
-    headers: authHeader(),
   })
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ message: `Delete failed ${res.status}` }))
-    throw new Error(errorData.message || `Delete failed ${res.status}`)
-  }
-  const profile = await res.json()
   localStorage.setItem('user', JSON.stringify(profile))
   return profile
 }
@@ -152,13 +126,11 @@ export function getCurrentUser(): UserProfile | null {
 }
 
 export function logout() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
+  logoutUser()
 }
 
 export function authHeader(): Record<string, string> {
-  const t = localStorage.getItem('token')
-  return t ? { Authorization: `Bearer ${t}` } : {}
+  return getAuthHeader()
 }
 
 export function getProfilePictureUrl(userId: number): string {

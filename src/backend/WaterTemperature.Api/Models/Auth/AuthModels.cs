@@ -46,6 +46,11 @@ public record UserProfileResponse(
 public record LoginResponse(string Token, int ExpiresIn, UserProfileResponse Profile);
 
 /// <summary>
+/// Response model for successful token refresh.
+/// </summary>
+public record RefreshTokenResponse(string Token, int ExpiresIn);
+
+/// <summary>
 /// Response model for user existence check.
 /// </summary>
 public record UserExistsResponse(bool Exists);

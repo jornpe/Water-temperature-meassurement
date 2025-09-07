@@ -58,6 +58,12 @@ namespace WaterTemperature.Api.Migrations
                     b.Property<string>("ProfilePictureContentType")
                         .HasColumnType("text");
 
+                    b.Property<string>("RefreshToken")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("RefreshTokenExpiry")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("UserName")
                         .IsRequired()
                         .HasMaxLength(50)

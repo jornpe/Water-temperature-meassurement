@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getCurrentUser, authHeader, logout as apiLogout, usersExist, type UserProfile } from '../api';
+import { getAccessToken, clearAccessToken, tryRestoreSession } from '../utils/apiClient';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -31,18 +32,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isAuthenticated = !!user && !!authHeader().Authorization;
+  const isAuthenticated = !!user && !!getAccessToken();
 
   // Check authentication status on mount and when local storage changes
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       const currentUser = getCurrentUser();
-      const hasToken = !!authHeader().Authorization;
+      let hasToken = !!getAccessToken();
+      
+      console.log('AuthContext: Checking authentication...', { 
+        hasUser: !!currentUser, 
+        hasToken 
+      });
+      
+      // If we have a user but no access token, try to restore session
+      if (currentUser && !hasToken) {
+        console.log('AuthContext: User found but no access token, attempting session restore...');
+        hasToken = await tryRestoreSession();
+        console.log('AuthContext: Session restore result:', hasToken);
+      }
       
       if (currentUser && hasToken) {
+        console.log('AuthContext: Authentication successful');
         setUser(currentUser);
       } else {
+        console.log('AuthContext: Authentication failed, clearing user data');
         setUser(null);
+        // Clear any stale user data
+        if (currentUser && !hasToken) {
+          localStorage.removeItem('user');
+        }
       }
       
       setIsLoading(false);
@@ -52,7 +71,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Listen for storage changes (in case user logs out in another tab)
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'user' || e.key === 'token') {
+      if (e.key === 'user') {
         checkAuth();
       }
     };
@@ -101,7 +120,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const logout = useCallback(() => {
-    apiLogout(); // Clear localStorage
+    apiLogout(); // Clear localStorage and call logout API
+    clearAccessToken(); // Clear in-memory token
     setUser(null);
     navigate('/login', { replace: true });
   }, [navigate]);

@@ -12,7 +12,7 @@ using WaterTemperature.Api.Data;
 namespace WaterTemperature.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250903161655_init")]
+    [Migration("20250906120357_init")]
     partial class init
     {
         /// <inheritdoc />
@@ -60,6 +60,12 @@ namespace WaterTemperature.Api.Migrations
 
                     b.Property<string>("ProfilePictureContentType")
                         .HasColumnType("text");
+
+                    b.Property<string>("RefreshToken")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("RefreshTokenExpiry")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("UserName")
                         .IsRequired()
