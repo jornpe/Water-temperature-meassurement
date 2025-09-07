@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -65,6 +66,15 @@ public class AuthControllerTests : IAsyncLifetime, IDisposable
             _mockJwtService.Object,
             _mockEnvironment.Object
         );
+
+        // Setup HTTP context for controller
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Host = new HostString("localhost");
+        
+        _controller.ControllerContext = new ControllerContext()
+        {
+            HttpContext = httpContext
+        };
 
         // Reset mock interactions for each test
         _mockJwtService.Reset();
@@ -262,7 +272,9 @@ public class AuthControllerTests : IAsyncLifetime, IDisposable
         var loginRequest = new LoginRequest("testuser", "password123");
 
         const string expectedToken = "mock.jwt.token";
+        const string expectedRefreshToken = "mock.refresh.token";
         _mockJwtService.Setup(x => x.CreateToken(It.IsAny<User>())).Returns(expectedToken);
+        _mockJwtService.Setup(x => x.GenerateRefreshToken()).Returns(expectedRefreshToken);
 
         // Act
         var result = await _controller.Login(loginRequest);

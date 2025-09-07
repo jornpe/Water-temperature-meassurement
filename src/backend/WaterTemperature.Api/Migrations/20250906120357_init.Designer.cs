@@ -13,7 +13,7 @@ namespace WaterTemperature.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
     [Migration("20250906120357_init")]
-    partial class init
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
