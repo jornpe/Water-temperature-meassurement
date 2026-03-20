@@ -8,37 +8,42 @@ import Sensors from './pages/Sensors'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Profile from './pages/Profile'
+import AppTheme from './shared-theme/AppTheme'
+import CssBaseline from '@mui/material/CssBaseline'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route 
-            path="/" 
-            element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Sensors />
-                </MainLayout>
-              </ProtectedRoute>
-            } 
-          />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route 
-            path="/profile" 
-            element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Profile />
-                </MainLayout>
-              </ProtectedRoute>
-            } 
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+    <AppTheme>
+      <CssBaseline enableColorScheme />
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            <Route 
+              path="/" 
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Sensors />
+                  </MainLayout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route 
+              path="/profile" 
+              element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Profile />
+                  </MainLayout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </AppTheme>
   </React.StrictMode>,
 )
