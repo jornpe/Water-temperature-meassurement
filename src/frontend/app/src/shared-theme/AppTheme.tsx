@@ -55,7 +55,7 @@ export default function AppTheme(props: AppThemeProps) {
   }
 
   return (
-    <ThemeProvider theme={theme} disableTransitionOnChange>
+    <ThemeProvider theme={theme} defaultMode="dark" disableTransitionOnChange noSsr>
       {children}
     </ThemeProvider>
   );
