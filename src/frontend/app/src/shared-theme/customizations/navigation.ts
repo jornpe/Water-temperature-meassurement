@@ -4,9 +4,13 @@ import { alpha } from '@mui/material/styles';
 export const navigationCustomizations: Components<Theme> = {
   MuiDrawer: {
     styleOverrides: {
-      paper: ({ theme }) => ({
-        backgroundColor: theme.palette.background.paper,
-      }),
+      paper: ({ theme }) => {
+        const palette = theme.vars ?? theme;
+
+        return {
+          backgroundColor: palette.palette.background.paper,
+        };
+      },
     },
   },
   MuiListItemButton: {
