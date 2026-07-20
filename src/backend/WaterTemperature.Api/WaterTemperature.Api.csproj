@@ -18,9 +18,16 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.8" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\aspire\servicedefaults\servicedefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>WaterTemperature.Api.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 </Project>

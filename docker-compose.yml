@@ -7,10 +7,14 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - PORT=8080
-      - ConnectionStrings__Default=Host=db;Port=5432;Database=watertemp;Username=app;Password=appsecret;Pooling=true;KeepAlive=30
-      - JWT__Secret=dev-super-secret-change-me-NOT-FOR-PROD-please-rotate-0123456789abcdef0123456789abcdef
+      - ConnectionStrings__watertemp=Host=db;Port=5432;Database=watertemp;Username=app;Password=appsecret;Pooling=true;KeepAlive=30
+      - JwtSettings__Secret=dev-super-secret-change-me-NOT-FOR-PROD-please-rotate-0123456789abcdef0123456789abcdef
       # Auto-create database schema for local dev (EF EnsureCreated)
       - Database__AutoCreate=true
+      # Persist Data Protection keys so encrypted secrets (e.g. MQTT password) survive container restarts
+      - DataProtection__KeysPath=/keys
+    volumes:
+      - dataprotection-keys:/keys
     ports:
       - "8080:8080"
     depends_on:
@@ -50,3 +54,4 @@ services:
 
 volumes:
   db-data:
+  dataprotection-keys:

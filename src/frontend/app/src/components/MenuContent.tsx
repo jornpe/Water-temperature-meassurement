@@ -9,7 +9,7 @@ import { Thermostat, GitHub } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const mainListItems = [
-  { text: 'Temperature Sensors', icon: <Thermostat />, path: '/' },
+  { text: 'Devices', icon: <Thermostat />, path: '/' },
 ];
 
 const secondaryListItems = [

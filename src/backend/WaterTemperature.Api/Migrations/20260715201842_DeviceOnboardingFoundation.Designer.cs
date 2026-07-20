@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using WaterTemperature.Api.Data;
@@ -11,9 +12,11 @@ using WaterTemperature.Api.Data;
 namespace WaterTemperature.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260715201842_DeviceOnboardingFoundation")]
+    partial class DeviceOnboardingFoundation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -46,12 +49,6 @@ namespace WaterTemperature.Api.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime?>("DesiredConfigurationUpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("DesiredConfigurationVersion")
-                        .HasColumnType("integer");
-
                     b.Property<string>("DeviceIdentifier")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -60,10 +57,6 @@ namespace WaterTemperature.Api.Migrations
                     b.Property<string>("FirmwareVersion")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
-
-                    b.Property<string>("HomeAssistantDeviceName")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime?>("LastDiscoveredAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -182,23 +175,11 @@ namespace WaterTemperature.Api.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<bool>("PushToHomeAssistant")
-                        .HasColumnType("boolean");
-
                     b.Property<DateTime?>("RegisteredAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("ReportIntervalSeconds")
                         .HasColumnType("integer");
-
-                    b.Property<int?>("ReportedConfigurationVersion")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("ReportedReportIntervalSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("RuntimeConfigurationReportedAtUtc")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -211,48 +192,6 @@ namespace WaterTemperature.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("Devices");
-                });
-
-            modelBuilder.Entity("WaterTemperature.Api.Data.DeviceLogEntry", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("DeviceId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("DeviceTimestampUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("DeviceUptimeMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Level")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
-
-                    b.Property<DateTime>("ReceivedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("SequenceNumber")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DeviceId", "ReceivedAtUtc");
-
-                    b.HasIndex("DeviceId", "SequenceNumber")
-                        .IsUnique();
-
-                    b.ToTable("DeviceLogEntries");
                 });
 
             modelBuilder.Entity("WaterTemperature.Api.Data.DevicePositionHistory", b =>
@@ -325,40 +264,6 @@ namespace WaterTemperature.Api.Migrations
                     b.ToTable("DeviceTemperatureHistory");
                 });
 
-            modelBuilder.Entity("WaterTemperature.Api.Data.HomeAssistantIntegrationSettings", b =>
-                {
-                    b.Property<int>("Id")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("Enabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Host")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("PasswordProtected")
-                        .HasMaxLength(4096)
-                        .HasColumnType("character varying(4096)");
-
-                    b.Property<int>("Port")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Username")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("HomeAssistantIntegrationSettings", t =>
-                        {
-                            t.HasCheckConstraint("CK_HomeAssistantIntegrationSettings_Singleton", "\"Id\" = 1");
-                        });
-                });
-
             modelBuilder.Entity("WaterTemperature.Api.Data.User", b =>
                 {
                     b.Property<int>("Id")
@@ -411,17 +316,6 @@ namespace WaterTemperature.Api.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("WaterTemperature.Api.Data.DeviceLogEntry", b =>
-                {
-                    b.HasOne("WaterTemperature.Api.Data.Device", "Device")
-                        .WithMany("LogEntries")
-                        .HasForeignKey("DeviceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Device");
-                });
-
             modelBuilder.Entity("WaterTemperature.Api.Data.DevicePositionHistory", b =>
                 {
                     b.HasOne("WaterTemperature.Api.Data.Device", "Device")
@@ -446,8 +340,6 @@ namespace WaterTemperature.Api.Migrations
 
             modelBuilder.Entity("WaterTemperature.Api.Data.Device", b =>
                 {
-                    b.Navigation("LogEntries");
-
                     b.Navigation("PositionHistory");
 
                     b.Navigation("TemperatureHistory");

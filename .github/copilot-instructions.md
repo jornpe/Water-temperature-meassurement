@@ -71,6 +71,9 @@
 
 ### Development & Debugging Workflow
 - **Build and Test Only**: Copilot should only build projects and run tests - DO NOT start applications
+- **ESP32 Firmware**: Copilot must never build, upload, flash, or monitor the `src/esp32/` program. Only make code changes there; the user will always handle ESP builds manually.
+- **Entity Framework Migrations**: Copilot should only create migrations by using EF tools. After generating a migration, ask the user whether any manual edits to the generated migration files are wanted or required.
+- **Migration Application**: Copilot must never apply migrations to any database and must not run database update commands.
 - **Application Execution**: Two supported deployment flows only:
   1. **Development/Debugging**: `dotnet run --project src/aspire/apphost` (Aspire composition)
   2. **Production**: `docker compose up --build` (containerized deployment)

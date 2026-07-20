@@ -1,21 +1,18 @@
 import * as React from 'react';
 import Header from './Header';
 import MainGrid from './MainGrid';
+import type { DeviceSummary } from '../api';
 
 interface SensorsContentProps {
-  temperatures?: Array<{
-    id: number;
-    value: number;
-    timestamp: string;
-    sensor?: string;
-  }>;
+  devices: DeviceSummary[];
+  onSelectDevice: (device: DeviceSummary) => void;
 }
 
-export default function SensorsContent({ temperatures = [] }: SensorsContentProps) {
+export default function SensorsContent({ devices, onSelectDevice }: SensorsContentProps) {
   return (
     <>
       <Header />
-      <MainGrid temperatures={temperatures} />
+      <MainGrid devices={devices} onSelectDevice={onSelectDevice} />
     </>
   );
 }

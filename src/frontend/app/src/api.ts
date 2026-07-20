@@ -36,11 +36,245 @@ export interface ChangePasswordData {
   newPassword: string
 }
 
+export interface DeviceConfiguration {
+  reportIntervalSeconds: number
+  desiredConfigurationVersion: number
+}
+
+export interface DeviceDesiredConfiguration {
+  version: number
+  reportIntervalSeconds: number
+  updatedAtUtc?: string | null
+}
+
+export interface DeviceRuntimeConfiguration {
+  appliedConfigurationVersion?: number | null
+  appliedReportIntervalSeconds?: number | null
+  reportedAtUtc?: string | null
+}
+
+export interface DeviceSummary {
+  id: number
+  deviceId: string
+  status: 'registered' | 'unregistered'
+  name?: string | null
+  place?: string | null
+  pushToHomeAssistant: boolean
+  latestTemperatureCelsius?: number | null
+  lastUpdateReceivedAtUtc?: string | null
+  lastDiscoveredAtUtc?: string | null
+}
+
+export interface DevicePositionSnapshot {
+  latitude?: number | null
+  longitude?: number | null
+  altitudeMeters?: number | null
+  gpsTimeUtc?: string | null
+  speedKnots?: number | null
+  hdop?: number | null
+  satellitesVisible?: number | null
+  satellitesUsed?: number | null
+  recordedAtUtc?: string | null
+}
+
+export interface DeviceWifiDiagnostics {
+  localIp?: string | null
+  wifiRssiDbm?: number | null
+  ssid?: string | null
+  bssid?: string | null
+  channel?: number | null
+  gatewayIp?: string | null
+  subnetMask?: string | null
+  dnsIp?: string | null
+  macAddress?: string | null
+}
+
+export interface DeviceCellularDiagnostics {
+  localIp?: string | null
+  simStatus?: string | null
+  networkConnected?: boolean | null
+  gprsConnected?: boolean | null
+  operator?: string | null
+  signalQuality?: number | null
+}
+
+export interface DeviceNetworkDiagnostics {
+  transport?: string | null
+  wifi?: DeviceWifiDiagnostics | null
+  cellular?: DeviceCellularDiagnostics | null
+}
+
+export interface DeviceDetail {
+  id: number
+  deviceId: string
+  status: 'registered' | 'unregistered'
+  name?: string | null
+  place?: string | null
+  pushToHomeAssistant: boolean
+  homeAssistantDeviceName: string
+  firmwareVersion?: string | null
+  reportIntervalSeconds: number
+  createdAtUtc: string
+  registeredAtUtc?: string | null
+  lastDiscoveredAtUtc?: string | null
+  lastSeenAtUtc?: string | null
+  lastUpdateReceivedAtUtc?: string | null
+  latestTemperatureCelsius?: number | null
+  latestTemperatureAtUtc?: string | null
+  desiredConfiguration: DeviceDesiredConfiguration
+  runtimeConfiguration: DeviceRuntimeConfiguration
+  hasPendingConfiguration: boolean
+  position: DevicePositionSnapshot
+  networkDiagnostics: DeviceNetworkDiagnostics
+  temperatureHistoryCount: number
+  positionHistoryCount: number
+}
+
+export interface RegisterDeviceData {
+  name: string
+  place: string
+  reportIntervalSeconds: number
+  pushToHomeAssistant: boolean
+  homeAssistantDeviceName?: string | null
+}
+
+export interface DeviceRegistrationResponse {
+  id: number
+  deviceId: string
+  status: string
+  configuration: DeviceConfiguration
+  apiKeyIssuedAtUtc: string
+}
+
+export interface DeviceKeyRegenerationResponse {
+  id: number
+  deviceId: string
+  apiKeyIssuedAtUtc: string
+  configuration: DeviceConfiguration
+}
+
+export interface UpdateRegisteredDeviceData {
+  name: string
+  place: string
+  reportIntervalSeconds: number
+  pushToHomeAssistant: boolean
+  homeAssistantDeviceName?: string | null
+}
+
+export interface HomeAssistantSettings {
+  pushDataToHomeAssistant: boolean
+  ipAddress?: string | null
+  port: number
+  user?: string | null
+  password?: string | null
+  updatedAtUtc?: string | null
+}
+
+export interface UpdateHomeAssistantSettingsData {
+  pushDataToHomeAssistant: boolean
+  ipAddress?: string | null
+  port: number
+  user?: string | null
+  password?: string | null
+}
+
+export interface DeviceTelemetryClearResponse {
+  id: number
+  deviceId: string
+  category: string
+  deletedCount: number
+}
+
+export interface DeviceDeleteResponse {
+  id: number
+  deviceId: string
+  message: string
+}
+
+export interface DeviceLogEntry {
+  id: number
+  sequenceNumber: number
+  level?: string | null
+  message: string
+  deviceTimestampUtc?: string | null
+  deviceUptimeMs?: number | null
+  receivedAtUtc: string
+}
+
+export interface DeviceLogsResponse {
+  deviceId: number
+  deviceIdentifier: string
+  page: number
+  pageSize: number
+  totalCount: number
+  items: DeviceLogEntry[]
+}
+
 // In Docker/runtime, Nginx proxies /api to API_BASE_URL. In dev, Vite proxy handles /api.
 const base = ''
 
 export async function getTemperatures(): Promise<Temperature[]> {
   return authenticatedFetch(`${base}/api/temperatures`)
+}
+
+export async function getDevices(): Promise<DeviceSummary[]> {
+  return authenticatedFetch(`${base}/api/devices`)
+}
+
+export async function getDevice(id: number): Promise<DeviceDetail> {
+  return authenticatedFetch(`${base}/api/devices/${id}`)
+}
+
+export async function getDeviceLogs(id: number, page = 1, pageSize = 100): Promise<DeviceLogsResponse> {
+  const query = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  })
+
+  return authenticatedFetch(`${base}/api/devices/${id}/logs?${query.toString()}`)
+}
+
+export async function registerDevice(id: number, data: RegisterDeviceData): Promise<DeviceRegistrationResponse> {
+  return authenticatedFetch(`${base}/api/devices/${id}/register`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function updateDevice(id: number, data: UpdateRegisteredDeviceData): Promise<DeviceDetail> {
+  return authenticatedFetch(`${base}/api/devices/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function regenerateDeviceKey(id: number): Promise<DeviceKeyRegenerationResponse> {
+  return authenticatedFetch(`${base}/api/devices/${id}/regenerate-key`, {
+    method: 'POST',
+  })
+}
+
+export async function clearDeviceTelemetry(id: number, category: 'temperature' | 'position'): Promise<DeviceTelemetryClearResponse> {
+  return authenticatedFetch(`${base}/api/devices/${id}/telemetry/${category}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function deleteDevice(id: number): Promise<DeviceDeleteResponse> {
+  return authenticatedFetch(`${base}/api/devices/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function getHomeAssistantSettings(): Promise<HomeAssistantSettings> {
+  return authenticatedFetch(`${base}/api/settings/home-assistant`)
+}
+
+export async function updateHomeAssistantSettings(data: UpdateHomeAssistantSettingsData): Promise<HomeAssistantSettings> {
+  return authenticatedFetch(`${base}/api/settings/home-assistant`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
 }
 
 export async function usersExist(): Promise<boolean> {

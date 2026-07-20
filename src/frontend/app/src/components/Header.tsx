@@ -18,7 +18,7 @@ export default function Header() {
       spacing={2}
     >
       <Typography variant="h4" component="h1" sx={{ color: 'text.primary' }}>
-        Temperature Sensors
+        Device Inventory
       </Typography>
       <ColorModeIconDropdown />
     </Stack>

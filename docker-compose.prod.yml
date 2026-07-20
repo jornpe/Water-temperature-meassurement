@@ -8,6 +8,10 @@ services:
       - ConnectionStrings__Default=Host=db;Port=5432;Database=watertemp;Username=app;Password=${POSTGRES_PASSWORD:?set in env}
       - JWT__Secret=${JWT_SECRET:?set in env}
       - Database__AutoCreate=${DATABASE_AUTO_CREATE:-false}
+      # Persist Data Protection keys so encrypted secrets (e.g. MQTT password) survive container restarts
+      - DataProtection__KeysPath=/keys
+    volumes:
+      - dataprotection-keys:/keys
     ports:
       - "8080:8080"
     depends_on:
@@ -43,3 +47,4 @@ services:
 
 volumes:
   db-data:
+  dataprotection-keys:

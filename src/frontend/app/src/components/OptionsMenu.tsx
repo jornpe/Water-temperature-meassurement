@@ -7,6 +7,7 @@ import Typography from '@mui/material/Typography';
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -25,12 +26,20 @@ export default function OptionsMenu() {
     setAnchorEl(null);
   };
 
-  const handleProfile = () => {
+  const handleProfile = (event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
     navigate('/profile');
     handleClose();
   };
 
-  const handleLogout = () => {
+  const handleSettings = (event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    navigate('/settings');
+    handleClose();
+  };
+
+  const handleLogout = (event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
     logout();
     handleClose();
   };
@@ -53,6 +62,14 @@ export default function OptionsMenu() {
         open={open}
         onClose={handleClose}
       >
+        <MenuItem onClick={handleSettings}>
+          <ListItemIcon>
+            <SettingsIcon fontSize="small" />
+          </ListItemIcon>
+          <Typography variant="body2">
+            Settings
+          </Typography>
+        </MenuItem>
         <MenuItem onClick={handleProfile}>
           <ListItemIcon>
             <AccountCircleIcon fontSize="small" />

@@ -4,23 +4,26 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
+import CardActionArea from '@mui/material/CardActionArea';
 import Stack from '@mui/material/Stack';
-import { Thermostat, Sensors, TrendingUp } from '@mui/icons-material';
+import Chip from '@mui/material/Chip';
+import { Thermostat, Sensors, FmdGood, WarningAmber } from '@mui/icons-material';
+import type { DeviceSummary } from '../api';
 
 interface MainGridProps {
-  temperatures: Array<{
-    id: number;
-    value: number;
-    timestamp: string;
-    sensor?: string;
-  }>;
+  devices: DeviceSummary[];
+  onSelectDevice: (device: DeviceSummary) => void;
 }
 
-export default function MainGrid({ temperatures = [] }: MainGridProps) {
-  const latestTemp = temperatures.length > 0 ? temperatures[temperatures.length - 1] : null;
-  const avgTemp = temperatures.length > 0 
-    ? temperatures.reduce((sum, temp) => sum + temp.value, 0) / temperatures.length 
-    : 0;
+export default function MainGrid({ devices, onSelectDevice }: MainGridProps) {
+  const registeredDevices = devices.filter((device) => device.status === 'registered')
+  const unregisteredDevices = devices.length - registeredDevices.length
+  const reportingDevices = devices.filter((device) => Boolean(device.lastUpdateReceivedAtUtc)).length
+  const averageTemperature = registeredDevices.length > 0
+    ? registeredDevices
+        .filter((device) => typeof device.latestTemperatureCelsius === 'number')
+        .reduce((sum, device, _, list) => sum + (device.latestTemperatureCelsius ?? 0) / list.length, 0)
+    : 0
   
   const StatCard = ({ 
     title, 
@@ -59,6 +62,14 @@ export default function MainGrid({ temperatures = [] }: MainGridProps) {
     </Card>
   );
 
+  const formatTimestamp = (value?: string | null) => {
+    if (!value) {
+      return 'No updates yet'
+    }
+
+    return new Date(value).toLocaleString()
+  }
+
   return (
     <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
       <Typography component="h2" variant="h6" sx={{ mb: 2 }}>
@@ -72,34 +83,31 @@ export default function MainGrid({ temperatures = [] }: MainGridProps) {
       >
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <StatCard
-            title="Current Temperature"
-            value={latestTemp?.value.toFixed(1) || '--'}
-            unit="°C"
+            title="Devices"
+            value={devices.length}
             icon={<Thermostat fontSize="large" />}
-            trend="+2.5% from yesterday"
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <StatCard
-            title="Average Temperature"
-            value={avgTemp.toFixed(1)}
-            unit="°C"
-            icon={<TrendingUp fontSize="large" />}
+            title="Unregistered"
+            value={unregisteredDevices}
+            icon={<WarningAmber fontSize="large" />}
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <StatCard
-            title="Active Sensors"
-            value={temperatures.length > 0 ? 1 : 0}
+            title="Reporting"
+            value={reportingDevices}
             icon={<Sensors fontSize="large" />}
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <StatCard
-            title="Total Readings"
-            value={temperatures.length}
-            icon={<Thermostat fontSize="large" />}
-            trend="+12% this week"
+            title="Average Temperature"
+            value={registeredDevices.length > 0 ? averageTemperature.toFixed(1) : '--'}
+            unit={registeredDevices.length > 0 ? '°C' : undefined}
+            icon={<FmdGood fontSize="large" />}
           />
         </Grid>
       </Grid>
@@ -109,50 +117,72 @@ export default function MainGrid({ temperatures = [] }: MainGridProps) {
           <Card>
             <CardContent>
               <Typography component="h2" variant="h6" sx={{ mb: 2 }}>
-                Recent Temperature Readings
+                Devices
               </Typography>
-              {temperatures.length > 0 ? (
-                <Stack spacing={1}>
-                  {temperatures.slice(-10).map((temp) => (
-                    <Box
-                      key={temp.id}
-                      sx={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        p: { xs: 1.5, sm: 2 },
-                        border: 1,
-                        borderColor: 'divider',
-                        borderRadius: 1,
-                        '&:hover': {
-                          bgcolor: 'action.hover',
-                        },
-                      }}
-                    >
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          fontSize: { xs: '0.875rem', sm: '1rem' },
+              {devices.length > 0 ? (
+                <Grid container spacing={2} columns={12}>
+                  {devices.map((device) => (
+                    <Grid key={device.id} size={{ xs: 12, md: 6, xl: 4 }}>
+                      <Card
+                        variant="outlined"
+                        sx={{
+                          height: '100%',
+                          borderColor: device.status === 'unregistered' ? 'warning.main' : 'divider',
                         }}
                       >
-                        {new Date(temp.timestamp).toLocaleString()}
-                      </Typography>
-                      <Typography 
-                        variant="h6" 
-                        color="primary"
-                        sx={{ 
-                          fontSize: { xs: '1.1rem', sm: '1.25rem' },
-                          fontWeight: 600,
-                        }}
-                      >
-                        {temp.value.toFixed(1)}°C
-                      </Typography>
-                    </Box>
+                        <CardActionArea sx={{ height: '100%' }} onClick={() => onSelectDevice(device)}>
+                          <CardContent>
+                            <Stack spacing={2}>
+                              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                                <Box>
+                                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                    {device.name || device.deviceId}
+                                  </Typography>
+                                  <Typography variant="body2" color="text.secondary">
+                                    {device.place || 'No place assigned'}
+                                  </Typography>
+                                </Box>
+                                <Chip
+                                  label={device.status === 'registered' ? 'Registered' : 'Unregistered'}
+                                  color={device.status === 'registered' ? 'success' : 'warning'}
+                                  size="small"
+                                />
+                              </Stack>
+
+                              <Stack direction="row" justifyContent="space-between" alignItems="flex-end">
+                                <Box>
+                                  <Typography variant="overline" color="text.secondary">
+                                    Latest Temperature
+                                  </Typography>
+                                  <Typography variant="h4">
+                                    {typeof device.latestTemperatureCelsius === 'number'
+                                      ? `${device.latestTemperatureCelsius.toFixed(1)}°C`
+                                      : '--'}
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ textAlign: 'right' }}>
+                                  <Typography variant="overline" color="text.secondary">
+                                    Last Update
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {formatTimestamp(device.lastUpdateReceivedAtUtc || device.lastDiscoveredAtUtc)}
+                                  </Typography>
+                                </Box>
+                              </Stack>
+
+                              <Typography variant="caption" color="text.secondary">
+                                {device.deviceId}
+                              </Typography>
+                            </Stack>
+                          </CardContent>
+                        </CardActionArea>
+                      </Card>
+                    </Grid>
                   ))}
-                </Stack>
+                </Grid>
               ) : (
                 <Typography variant="body2" color="text.secondary">
-                  No temperature data available yet.
+                  No devices have been discovered yet.
                 </Typography>
               )}
             </CardContent>
