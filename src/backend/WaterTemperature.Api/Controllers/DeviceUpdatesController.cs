@@ -77,6 +77,29 @@ public class DeviceUpdatesController(
             });
         }
 
+        if (request.Battery is not null)
+        {
+            device.LatestBatteryModemReadingValid = request.Battery.ModemReadingValid;
+            device.LatestBatteryChargeState = request.Battery.ChargeState;
+            device.LatestBatteryState = request.Battery.BatteryState;
+            device.LatestBatteryPercentage = request.Battery.Percentage;
+            device.LatestBatteryModemMillivolts = request.Battery.ModemMillivolts;
+            device.LatestBatteryAdcVoltage = request.Battery.AdcVoltage;
+            device.LatestBatteryAtUtc = now;
+
+            dbContext.DeviceBatteryHistory.Add(new DeviceBatteryHistory
+            {
+                Device = device,
+                ModemReadingValid = request.Battery.ModemReadingValid,
+                ChargeState = request.Battery.ChargeState,
+                BatteryState = request.Battery.BatteryState,
+                Percentage = request.Battery.Percentage,
+                ModemMillivolts = request.Battery.ModemMillivolts,
+                AdcVoltage = request.Battery.AdcVoltage,
+                RecordedAtUtc = now,
+            });
+        }
+
         if (request.Network is not null)
         {
             device.LatestNetworkTransport = request.Network.Transport;

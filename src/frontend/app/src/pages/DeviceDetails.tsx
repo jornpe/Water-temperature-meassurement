@@ -12,7 +12,11 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControl,
   FormControlLabel,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   Switch,
   Tab,
@@ -58,6 +62,10 @@ function formatValue(value?: string | number | boolean | null, suffix = '') {
   return `${value}${suffix}`
 }
 
+function formatBatteryState(value?: number | null) {
+  return value === 0 ? 'Not charging' : value === 1 ? 'Charging' : value === 2 ? 'Full' : 'Unknown'
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <Stack spacing={0.5} sx={{ minWidth: 180 }}>
@@ -100,11 +108,51 @@ export default function DeviceDetails() {
   const inFlightRef = useRef(false)
   const logsContainerRef = useRef<HTMLDivElement | null>(null)
   const [isFollowingLogs, setIsFollowingLogs] = useState(true)
+  const formDirtyRef = useRef(false)
+  const [logSeverityFilter, setLogSeverityFilter] = useState('all')
+  const [logFromTime, setLogFromTime] = useState('')
+  const [logToTime, setLogToTime] = useState('')
+  const [logTextFilter, setLogTextFilter] = useState('')
 
   const logEntries = logs ? [...logs.items].reverse() : []
 
+  const availableLogSeverities = Array.from(
+    new Set(logEntries.map((entry) => entry.level).filter((level): level is string => Boolean(level))),
+  ).sort()
+
+  const fromTimeMs = logFromTime ? new Date(logFromTime).getTime() : null
+  const toTimeMs = logToTime ? new Date(logToTime).getTime() : null
+  const normalizedLogTextFilter = logTextFilter.trim().toLowerCase()
+
+  const filteredLogEntries = logEntries.filter((entry) => {
+    if (logSeverityFilter !== 'all' && (entry.level ?? '').toLowerCase() !== logSeverityFilter.toLowerCase()) {
+      return false
+    }
+
+    const entryTimeMs = new Date(entry.receivedAtUtc).getTime()
+
+    if (fromTimeMs !== null && entryTimeMs < fromTimeMs) {
+      return false
+    }
+
+    if (toTimeMs !== null && entryTimeMs > toTimeMs) {
+      return false
+    }
+
+    if (normalizedLogTextFilter && !entry.message.toLowerCase().includes(normalizedLogTextFilter)) {
+      return false
+    }
+
+    return true
+  })
+
   useEffect(() => {
     if (!device) {
+      return
+    }
+
+    if (formDirtyRef.current) {
+      // The user has unsaved edits in the form; a background poll refresh must not wipe them.
       return
     }
 
@@ -269,6 +317,7 @@ export default function DeviceDetails() {
 
     try {
       await action()
+      formDirtyRef.current = false
       if (pendingAction !== 'delete') {
         await refreshPage()
       }
@@ -327,6 +376,12 @@ export default function DeviceDetails() {
       reportIntervalSeconds !== savedConfiguration.reportIntervalSeconds ||
       pushToHomeAssistant !== savedConfiguration.pushToHomeAssistant ||
       homeAssistantDeviceName !== savedConfiguration.homeAssistantDeviceName)
+
+  const isRegistrationFormComplete =
+    name.trim() !== '' &&
+    place.trim() !== '' &&
+    reportIntervalSeconds.trim() !== '' &&
+    Number(reportIntervalSeconds) > 0
 
   const handleRegisterSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -487,6 +542,22 @@ export default function DeviceDetails() {
                 <Card variant="outlined" sx={{ flex: 1 }}>
                   <CardContent>
                     <Typography variant="h6" sx={{ mb: 2 }}>
+                      Battery status
+                    </Typography>
+                    <Stack direction="row" flexWrap="wrap" gap={2}>
+                      <DetailRow label="Percentage" value={formatValue(device.battery.percentage, '%')} />
+                      <DetailRow label="Charge state" value={formatBatteryState(device.battery.chargeState)} />
+                      <DetailRow label="Modem voltage" value={formatValue(device.battery.modemMillivolts, ' mV')} />
+                      <DetailRow label="ADC voltage" value={formatValue(device.battery.adcVoltage, ' V')} />
+                      <DetailRow label="Modem reading valid" value={formatValue(device.battery.modemReadingValid)} />
+                      <DetailRow label="Recorded at" value={formatDate(device.battery.recordedAtUtc)} />
+                    </Stack>
+                  </CardContent>
+                </Card>
+
+                <Card variant="outlined" sx={{ flex: 1 }}>
+                  <CardContent>
+                    <Typography variant="h6" sx={{ mb: 2 }}>
                       Position snapshot
                     </Typography>
                     <Stack direction="row" flexWrap="wrap" gap={2}>
@@ -529,25 +600,55 @@ export default function DeviceDetails() {
                     </Typography>
                     <Box component="form" onSubmit={handleRegisterSubmit}>
                       <Stack spacing={2}>
-                        <TextField label="Name" value={name} onChange={(event) => setName(event.target.value)} required fullWidth />
-                        <TextField label="Place" value={place} onChange={(event) => setPlace(event.target.value)} required fullWidth />
+                        <TextField
+                          label="Name"
+                          value={name}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setName(event.target.value)
+                          }}
+                          required
+                          fullWidth
+                        />
+                        <TextField
+                          label="Place"
+                          value={place}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setPlace(event.target.value)
+                          }}
+                          required
+                          fullWidth
+                        />
                         <TextField
                           label="Report interval seconds"
                           value={reportIntervalSeconds}
-                          onChange={(event) => setReportIntervalSeconds(event.target.value)}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setReportIntervalSeconds(event.target.value)
+                          }}
                           type="number"
                           inputProps={{ min: 1 }}
                           required
                           fullWidth
                         />
                         <FormControlLabel
-                          control={<Switch checked={pushToHomeAssistant} onChange={(_, checked) => setPushToHomeAssistant(checked)} />}
+                          control={
+                            <Switch
+                              checked={pushToHomeAssistant}
+                              onChange={(_, checked) => {
+                                formDirtyRef.current = true
+                                setPushToHomeAssistant(checked)
+                              }}
+                            />
+                          }
                           label="Send data to Home Assistant"
                         />
                         <TextField
                           label="Home Assistant device name"
                           value={homeAssistantDeviceName}
                           onChange={(event) => {
+                            formDirtyRef.current = true
                             setHomeAssistantDeviceName(event.target.value)
                             setHomeAssistantDeviceNameError(null)
                           }}
@@ -560,7 +661,12 @@ export default function DeviceDetails() {
                           placeholder={getEffectiveHomeAssistantDeviceName()}
                           fullWidth
                         />
-                        <Button type="submit" variant="contained" disabled={actionLoading} sx={{ alignSelf: 'flex-start' }}>
+                        <Button
+                          type="submit"
+                          variant="contained"
+                          disabled={actionLoading || !isRegistrationFormComplete}
+                          sx={{ alignSelf: 'flex-start' }}
+                        >
                           {actionLoading ? 'Registering...' : 'Register device'}
                         </Button>
                       </Stack>
@@ -582,25 +688,55 @@ export default function DeviceDetails() {
                   {device.status === 'registered' ? (
                     <Box component="form" onSubmit={handleSaveConfiguration}>
                       <Stack spacing={2}>
-                        <TextField label="Name" value={name} onChange={(event) => setName(event.target.value)} required fullWidth />
-                        <TextField label="Place" value={place} onChange={(event) => setPlace(event.target.value)} required fullWidth />
+                        <TextField
+                          label="Name"
+                          value={name}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setName(event.target.value)
+                          }}
+                          required
+                          fullWidth
+                        />
+                        <TextField
+                          label="Place"
+                          value={place}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setPlace(event.target.value)
+                          }}
+                          required
+                          fullWidth
+                        />
                         <TextField
                           label="Report interval seconds"
                           value={reportIntervalSeconds}
-                          onChange={(event) => setReportIntervalSeconds(event.target.value)}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setReportIntervalSeconds(event.target.value)
+                          }}
                           type="number"
                           inputProps={{ min: 1 }}
                           required
                           fullWidth
                         />
                         <FormControlLabel
-                          control={<Switch checked={pushToHomeAssistant} onChange={(_, checked) => setPushToHomeAssistant(checked)} />}
+                          control={
+                            <Switch
+                              checked={pushToHomeAssistant}
+                              onChange={(_, checked) => {
+                                formDirtyRef.current = true
+                                setPushToHomeAssistant(checked)
+                              }}
+                            />
+                          }
                           label="Send data to Home Assistant"
                         />
                         <TextField
                           label="Home Assistant device name"
                           value={homeAssistantDeviceName}
                           onChange={(event) => {
+                            formDirtyRef.current = true
                             setHomeAssistantDeviceName(event.target.value)
                             setHomeAssistantDeviceNameError(null)
                           }}
@@ -698,7 +834,7 @@ export default function DeviceDetails() {
                     <Typography variant="h6">Device log history</Typography>
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
                       <Typography variant="body2" color="text.secondary">
-                        Showing {logs?.items.length ?? 0} of {logs?.totalCount ?? 0} log entries
+                        Showing {filteredLogEntries.length} of {logs?.totalCount ?? 0} log entries
                       </Typography>
                       {!isFollowingLogs && logEntries.length > 0 ? (
                         <Button size="small" onClick={jumpToLatestLogs}>
@@ -708,73 +844,144 @@ export default function DeviceDetails() {
                     </Stack>
                   </Stack>
 
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
+                    <FormControl size="small" sx={{ minWidth: 160 }}>
+                      <InputLabel id="log-severity-filter-label">Severity</InputLabel>
+                      <Select
+                        labelId="log-severity-filter-label"
+                        label="Severity"
+                        value={logSeverityFilter}
+                        onChange={(event) => setLogSeverityFilter(event.target.value)}
+                      >
+                        <MenuItem value="all">All severities</MenuItem>
+                        {availableLogSeverities.map((severity) => (
+                          <MenuItem key={severity} value={severity}>
+                            {severity}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <TextField
+                      label="From"
+                      type="datetime-local"
+                      size="small"
+                      value={logFromTime}
+                      onChange={(event) => setLogFromTime(event.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                    <TextField
+                      label="To"
+                      type="datetime-local"
+                      size="small"
+                      value={logToTime}
+                      onChange={(event) => setLogToTime(event.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                    <TextField
+                      label="Search log line"
+                      size="small"
+                      fullWidth
+                      value={logTextFilter}
+                      onChange={(event) => setLogTextFilter(event.target.value)}
+                    />
+                  </Stack>
+
                   {logEntries.length > 0 ? (
-                    <Box
-                      ref={logsContainerRef}
-                      onScroll={handleLogsScroll}
-                      sx={{
-                        maxHeight: 480,
-                        overflowY: 'auto',
-                        border: 1,
-                        borderColor: 'divider',
-                        borderRadius: 2,
-                        bgcolor: 'background.default',
-                        fontFamily: 'Monaco, Menlo, Consolas, "Courier New", monospace',
-                      }}
-                    >
+                    filteredLogEntries.length > 0 ? (
                       <Box
+                        ref={logsContainerRef}
+                        onScroll={handleLogsScroll}
                         sx={{
-                          display: 'grid',
-                          gridTemplateColumns: { xs: 'minmax(120px, 132px) minmax(0, 1fr)', sm: 'minmax(180px, 220px) minmax(0, 1fr)' },
-                          gap: 2,
-                          px: 2,
-                          py: 1.5,
-                          position: 'sticky',
-                          top: 0,
-                          zIndex: 1,
-                          borderBottom: 1,
+                          height: 'calc(100vh - 420px)',
+                          minHeight: 320,
+                          overflowY: 'auto',
+                          border: 1,
                           borderColor: 'divider',
-                          bgcolor: 'background.paper',
+                          borderRadius: 2,
+                          bgcolor: 'background.default',
                         }}
                       >
-                        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'inherit' }}>
-                          Time
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'inherit' }}>
-                          Log line
-                        </Typography>
-                      </Box>
-
-                      {logEntries.map((entry) => (
                         <Box
-                          key={entry.id}
                           sx={{
                             display: 'grid',
-                            gridTemplateColumns: { xs: 'minmax(120px, 132px) minmax(0, 1fr)', sm: 'minmax(180px, 220px) minmax(0, 1fr)' },
+                            gridTemplateColumns: {
+                              xs: 'minmax(48px, 56px) minmax(120px, 140px) minmax(72px, 96px) minmax(0, 1fr)',
+                              sm: 'minmax(56px, 72px) minmax(180px, 200px) minmax(88px, 110px) minmax(0, 1fr)',
+                            },
                             gap: 2,
                             px: 2,
-                            py: 1,
+                            py: 1.5,
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 1,
                             borderBottom: 1,
                             borderColor: 'divider',
-                            alignItems: 'start',
-                            '&:last-child': {
-                              borderBottom: 'none',
-                            },
+                            bgcolor: 'background.paper',
                           }}
                         >
-                          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'inherit', pt: 0.25 }}>
-                            {new Date(entry.receivedAtUtc).toLocaleString()}
+                          <Typography variant="caption" color="text.secondary">
+                            #
                           </Typography>
-                          <Typography variant="body2" sx={{ fontFamily: 'inherit', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            {entry.level ? `[${entry.level}] ` : ''}
-                            {entry.message}
-                            <Box component="span" sx={{ ml: 1, color: 'text.secondary', fontSize: '0.75rem' }}>
-                              #{entry.sequenceNumber}
-                            </Box>
+                          <Typography variant="caption" color="text.secondary">
+                            Time
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Severity
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Log line
                           </Typography>
                         </Box>
-                      ))}
-                    </Box>
+
+                        {filteredLogEntries.map((entry) => (
+                          <Box
+                            key={entry.id}
+                            sx={{
+                              display: 'grid',
+                              gridTemplateColumns: {
+                                xs: 'minmax(48px, 56px) minmax(120px, 140px) minmax(72px, 96px) minmax(0, 1fr)',
+                                sm: 'minmax(56px, 72px) minmax(180px, 200px) minmax(88px, 110px) minmax(0, 1fr)',
+                              },
+                              gap: 2,
+                              px: 2,
+                              py: 1,
+                              borderBottom: 1,
+                              borderColor: 'divider',
+                              alignItems: 'start',
+                              '&:last-child': {
+                                borderBottom: 'none',
+                              },
+                            }}
+                          >
+                            <Typography variant="body2" color="text.secondary" sx={{ pt: 0.25 }}>
+                              {entry.sequenceNumber}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ pt: 0.25 }}>
+                              {new Date(entry.receivedAtUtc).toLocaleString()}
+                            </Typography>
+                            <Chip
+                              label={entry.level ?? 'unknown'}
+                              size="small"
+                              color={
+                                entry.level?.toLowerCase() === 'error'
+                                  ? 'error'
+                                  : entry.level?.toLowerCase() === 'warning'
+                                    ? 'warning'
+                                    : 'default'
+                              }
+                              sx={{ justifySelf: 'start' }}
+                            />
+                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                              {entry.message}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        No log entries match the current filters.
+                      </Typography>
+                    )
                   ) : (
                     <Typography variant="body2" color="text.secondary">
                       No device logs have been stored yet.

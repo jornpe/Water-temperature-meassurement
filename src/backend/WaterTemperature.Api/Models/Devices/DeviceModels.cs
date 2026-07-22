@@ -72,6 +72,15 @@ public record DeviceNetworkDiagnosticsResponse(
     DeviceWifiDiagnosticsResponse? Wifi,
     DeviceCellularDiagnosticsResponse? Cellular);
 
+public record DeviceBatteryDiagnosticsResponse(
+    bool? ModemReadingValid,
+    int? ChargeState,
+    BatteryState? BatteryState,
+    int? Percentage,
+    int? ModemMillivolts,
+    float? AdcVoltage,
+    DateTime? RecordedAtUtc);
+
 public record DeviceDetailResponse(
     int Id,
     string DeviceId,
@@ -94,6 +103,7 @@ public record DeviceDetailResponse(
     bool HasPendingConfiguration,
     DevicePositionSnapshotResponse Position,
     DeviceNetworkDiagnosticsResponse NetworkDiagnostics,
+    DeviceBatteryDiagnosticsResponse Battery,
     int TemperatureHistoryCount,
     int PositionHistoryCount);
 
@@ -173,9 +183,26 @@ public record DeviceUpdateRequest(
     string? FirmwareVersion,
     decimal? Temperature,
     DevicePositionUpdateRequest? Position,
+    Battery? Battery,
     DeviceNetworkDiagnosticsUpdateRequest? Network,
     DeviceRuntimeConfigurationUpdateRequest? RuntimeConfiguration = null,
     IReadOnlyList<DeviceLogEntryRequest>? Logs = null);
+
+public enum BatteryState
+{
+    Unknown = -1,
+    NotCharging = 0,
+    Charging = 1,
+    Full = 2
+}
+
+public record Battery(
+    bool ModemReadingValid,
+    int ChargeState,
+    BatteryState BatteryState,
+    int Percentage,
+    int ModemMillivolts,
+    float AdcVoltage);
 
 public record DeviceUpdateResponse(
     string DeviceId,

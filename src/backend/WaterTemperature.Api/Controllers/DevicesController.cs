@@ -108,6 +108,14 @@ public class DevicesController(
                         item.LatestCellularGprsConnected,
                         item.LatestCellularOperator,
                         item.LatestCellularSignalQuality)),
+                new DeviceBatteryDiagnosticsResponse(
+                    item.LatestBatteryModemReadingValid,
+                    item.LatestBatteryChargeState,
+                    item.LatestBatteryState,
+                    item.LatestBatteryPercentage,
+                    item.LatestBatteryModemMillivolts,
+                    item.LatestBatteryAdcVoltage,
+                    item.LatestBatteryAtUtc),
                 item.TemperatureHistory.Count,
                 item.PositionHistory.Count))
             .SingleOrDefaultAsync();

@@ -10,6 +10,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<DeviceLogEntry> DeviceLogEntries => Set<DeviceLogEntry>();
     public DbSet<DeviceTemperatureHistory> DeviceTemperatureHistory => Set<DeviceTemperatureHistory>();
     public DbSet<DevicePositionHistory> DevicePositionHistory => Set<DevicePositionHistory>();
+    public DbSet<DeviceBatteryHistory> DeviceBatteryHistory => Set<DeviceBatteryHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -60,6 +61,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithOne(entry => entry.Device)
                 .HasForeignKey(entry => entry.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(device => device.BatteryHistory)
+                .WithOne(history => history.Device)
+                .HasForeignKey(history => history.DeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Property(device => device.LatestBatteryState).HasConversion<string>().HasMaxLength(32);
         });
 
         modelBuilder.Entity<HomeAssistantIntegrationSettings>(entity =>
@@ -88,6 +96,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<DevicePositionHistory>(entity =>
         {
+            entity.HasIndex(history => new { history.DeviceId, history.RecordedAtUtc });
+        });
+
+        modelBuilder.Entity<DeviceBatteryHistory>(entity =>
+        {
+            entity.Property(history => history.BatteryState).HasConversion<string>().HasMaxLength(32);
             entity.HasIndex(history => new { history.DeviceId, history.RecordedAtUtc });
         });
     }

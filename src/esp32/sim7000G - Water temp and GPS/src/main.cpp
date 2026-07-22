@@ -13,6 +13,7 @@ constexpr int MODEM_RX_PIN = 26;
 constexpr int MODEM_TX_PIN = 27;
 constexpr int MODEM_PWRKEY_PIN = 4;
 constexpr int MODEM_DTR_PIN = 25;
+constexpr int BATTERY_ADC_PIN = 35;
 
 constexpr uint32_t MODEM_BAUD_RATE = 115200;
 constexpr uint32_t DEFAULT_REPORT_INTERVAL_SECONDS = 30;
@@ -162,6 +163,26 @@ struct GpsFix
 };
 
 GpsFix latestFix;
+
+enum class BatteryState : int8_t
+{
+    Unknown = -1,
+    NotCharging = 0,
+    Charging = 1,
+    Full = 2
+};
+
+struct BatteryStatus
+{
+    bool modemReadingValid;
+    int8_t chargeState;
+    BatteryState batteryState;
+    int8_t percentage;
+    int16_t modemMillivolts;
+    float adcVoltage;
+};
+
+BatteryStatus latestBatteryStatus;
 
 struct HttpResponse
 {
@@ -591,11 +612,6 @@ void ensureGpsReady()
 
     const uint32_t now = millis();
 
-    if (!intervalElapsed(now, lastGpsInitAttemptMs, 30000))
-    {
-        return;
-    }
-
     lastGpsInitAttemptMs = now;
     enableGps();
 }
@@ -737,11 +753,6 @@ void ensureNetworkConnection()
 
     const uint32_t now = millis();
 
-    if (!intervalElapsed(now, lastNetworkAttemptMs, config.wifi.retryIntervalMs))
-    {
-        return;
-    }
-
     connectNetwork();
 }
 
@@ -807,6 +818,14 @@ String buildUpdatePayload(const uint32_t now)
             position["gpsTimeUtc"] = gpsTimeUtc;
         }
     }
+
+    JsonObject battery = document["battery"].to<JsonObject>();
+    battery["modemReadingValid"] = latestBatteryStatus.modemReadingValid;
+    battery["chargeState"] = latestBatteryStatus.chargeState;
+    battery["batteryState"] = static_cast<int8_t>(latestBatteryStatus.batteryState);
+    battery["percentage"] = latestBatteryStatus.percentage;
+    battery["modemMillivolts"] = latestBatteryStatus.modemMillivolts;
+    battery["adcVoltage"] = latestBatteryStatus.adcVoltage;
 
     JsonObject network = document["network"].to<JsonObject>();
     network["transport"] = activeTransportName();
@@ -978,11 +997,6 @@ void handleUpdateResponse(const HttpResponse& response)
 
 void runDiscoveryMode(const uint32_t now)
 {
-    if (!intervalElapsed(now, lastDiscoveryAttemptMs, DISCOVERY_INTERVAL_MS))
-    {
-        return;
-    }
-
     lastDiscoveryAttemptMs = now;
 
     const HttpResponse response = sendJsonPost(
@@ -995,11 +1009,6 @@ void runDiscoveryMode(const uint32_t now)
 void runOperationalMode(const uint32_t now)
 {
     const uint32_t reportIntervalMs = reportIntervalSeconds * 1000UL;
-
-    if (!intervalElapsed(now, lastUpdateAttemptMs, reportIntervalMs))
-    {
-        return;
-    }
 
     lastUpdateAttemptMs = now;
 
@@ -1017,11 +1026,6 @@ void pollGps()
     }
 
     const uint32_t now = millis();
-
-    if (!intervalElapsed(now, lastGpsPollMs, config.tracker.gpsPollIntervalMs))
-    {
-        return;
-    }
 
     lastGpsPollMs = now;
 
@@ -1065,6 +1069,59 @@ void pollGps()
         + String(latestFix.satellitesUsed));
 }
 
+float readBatteryVoltage()
+{
+    constexpr int sampleCount = 20;
+
+    uint32_t totalMillivolts = 0;
+
+    analogSetPinAttenuation(BATTERY_ADC_PIN, ADC_11db);
+
+    for (int i = 0; i < sampleCount; ++i) {
+        totalMillivolts += analogReadMilliVolts(BATTERY_ADC_PIN);
+        delay(5);
+    }
+
+    const float adcMillivolts =
+        static_cast<float>(totalMillivolts) / sampleCount;
+
+    // The board uses approximately a 1:1 voltage divider.
+    return (adcMillivolts * 2.0F) / 1000.0F;
+}
+
+void readBatteryStatus()
+{
+    BatteryStatus status{
+        .modemReadingValid = false,
+        .chargeState = -1,
+        .percentage = -1,
+        .modemMillivolts = 0,
+        .adcVoltage = readBatteryVoltage()
+    };
+
+    status.modemReadingValid = modem.getBattStats(
+        status.chargeState,
+        status.percentage,
+        status.modemMillivolts
+    );
+
+    status.batteryState = static_cast<BatteryState>(status.chargeState);
+
+    logInfo(
+        "Battery status: "
+        + String(status.adcVoltage, 2)
+        + " V (ADC), "
+        + String(status.modemMillivolts / 1000.0F, 2)
+        + " V (modem), "
+        + String(status.percentage)
+        + "%, "
+        + (status.batteryState == BatteryState::Charging ? "charging" :
+            status.batteryState == BatteryState::Full ? "full" :
+            status.batteryState == BatteryState::NotCharging ? "not charging" : "unknown"));
+
+    latestBatteryStatus = status;
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -1090,6 +1147,7 @@ void setup()
 
 void loop()
 {
+    readBatteryStatus();
     ensureNetworkConnection();
     ensureGpsReady();
     pollGps();
@@ -1111,5 +1169,7 @@ void loop()
         runOperationalMode(now);
     }
 
-    delay(10);
+    const uint32_t reportIntervalMs = reportIntervalSeconds * 1000UL;
+
+    delay(reportIntervalMs);
 }

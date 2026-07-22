@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using WaterTemperature.Api.Models.Devices;
 
 namespace WaterTemperature.Api.Data;
 
@@ -107,7 +108,16 @@ public class Device
 
     public int? LatestCellularSignalQuality { get; set; }
 
+    public bool? LatestBatteryModemReadingValid { get; set; }
+    public int? LatestBatteryChargeState { get; set; }
+    public BatteryState? LatestBatteryState { get; set; }
+    public int? LatestBatteryPercentage { get; set; }
+    public int? LatestBatteryModemMillivolts { get; set; }
+    public float? LatestBatteryAdcVoltage { get; set; }
+    public DateTime? LatestBatteryAtUtc { get; set; }
+
     public ICollection<DeviceTemperatureHistory> TemperatureHistory { get; init; } = new List<DeviceTemperatureHistory>();
     public ICollection<DevicePositionHistory> PositionHistory { get; init; } = new List<DevicePositionHistory>();
     public ICollection<DeviceLogEntry> LogEntries { get; init; } = new List<DeviceLogEntry>();
+    public ICollection<DeviceBatteryHistory> BatteryHistory { get; init; } = new List<DeviceBatteryHistory>();
 }

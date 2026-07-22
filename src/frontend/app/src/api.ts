@@ -104,6 +104,18 @@ export interface DeviceNetworkDiagnostics {
   cellular?: DeviceCellularDiagnostics | null
 }
 
+export type BatteryState = 'Unknown' | 'NotCharging' | 'Charging' | 'Full'
+
+export interface DeviceBatteryDiagnostics {
+  modemReadingValid?: boolean | null
+  chargeState?: number | null
+  batteryState?: BatteryState | null
+  percentage?: number | null
+  modemMillivolts?: number | null
+  adcVoltage?: number | null
+  recordedAtUtc?: string | null
+}
+
 export interface DeviceDetail {
   id: number
   deviceId: string
@@ -126,6 +138,7 @@ export interface DeviceDetail {
   hasPendingConfiguration: boolean
   position: DevicePositionSnapshot
   networkDiagnostics: DeviceNetworkDiagnostics
+  battery: DeviceBatteryDiagnostics
   temperatureHistoryCount: number
   positionHistoryCount: number
 }
