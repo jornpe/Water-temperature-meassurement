@@ -13,7 +13,6 @@ namespace WaterTemperature.Api.Controllers;
 [Route("api/settings")]
 public class SettingsController(
     AppDbContext dbContext,
-    ISecretProtectionService secretProtectionService,
     IHomeAssistantMqttSyncService homeAssistantMqttSyncService) : ApiControllerBase
 {
     [HttpGet("home-assistant")]
@@ -23,7 +22,7 @@ public class SettingsController(
             .AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == HomeAssistantIntegrationSettings.SingletonId);
 
-        return Ok(MapResponse(settings, secretProtectionService));
+        return Ok(ToResponse(settings));
     }
 
     [HttpPut("home-assistant")]
@@ -51,16 +50,7 @@ public class SettingsController(
         settings.Host = NormalizeOptional(request.IpAddress);
         settings.Port = request.Port > 0 ? request.Port : 1883;
         settings.Username = NormalizeOptional(request.User);
-
-        // Only touch the stored password when a new, non-blank value is supplied.
-        // The client always resends whatever is currently in the password field, which is
-        // blank if the previous value couldn't be decrypted (or was never set) - overwriting
-        // unconditionally would silently wipe out a previously saved password.
-        if (!string.IsNullOrWhiteSpace(request.Password))
-        {
-            settings.PasswordProtected = secretProtectionService.Protect(request.Password);
-        }
-
+        settings.Password = NormalizeOptional(request.Password);
         settings.UpdatedAtUtc = DateTime.UtcNow;
 
         if (dbContext.Entry(settings).State == EntityState.Detached)
@@ -72,27 +62,22 @@ public class SettingsController(
 
         await homeAssistantMqttSyncService.RefreshAllAsync();
 
-        return Ok(MapResponse(settings, secretProtectionService));
-    }
-
-    private static HomeAssistantSettingsResponse MapResponse(HomeAssistantIntegrationSettings? settings, ISecretProtectionService secretProtectionService)
-    {
-        if (settings is null)
-        {
-            return new HomeAssistantSettingsResponse(false, null, 1883, null, null, null);
-        }
-
-        return new HomeAssistantSettingsResponse(
-            settings.Enabled,
-            settings.Host,
-            settings.Port,
-            settings.Username,
-            secretProtectionService.TryUnprotect(settings.PasswordProtected),
-            settings.UpdatedAtUtc);
+        return Ok(ToResponse(settings));
     }
 
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static HomeAssistantSettingsResponse ToResponse(HomeAssistantIntegrationSettings? settings)
+    {
+        return new HomeAssistantSettingsResponse(
+            settings?.Enabled ?? false,
+            settings?.Host,
+            settings?.Port ?? 1883,
+            settings?.Username,
+            settings?.Password,
+            settings?.UpdatedAtUtc);
     }
 }

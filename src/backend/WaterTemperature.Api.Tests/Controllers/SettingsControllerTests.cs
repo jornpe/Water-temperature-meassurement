@@ -13,7 +13,6 @@ namespace WaterTemperature.Api.Tests.Controllers;
 public class SettingsControllerTests : IDisposable
 {
     private readonly AppDbContext _dbContext;
-    private readonly ISecretProtectionService _secretProtectionService;
     private readonly SettingsController _controller;
 
     public SettingsControllerTests()
@@ -23,8 +22,7 @@ public class SettingsControllerTests : IDisposable
             .Options;
 
         _dbContext = new AppDbContext(options);
-        _secretProtectionService = new SecretProtectionService(DataProtectionProvider.Create("WaterTemperature.Api.Tests"));
-        _controller = new SettingsController(_dbContext, _secretProtectionService, new FakeHomeAssistantMqttSyncService());
+        _controller = new SettingsController(_dbContext, new FakeHomeAssistantMqttSyncService());
     }
 
     [Fact]
@@ -59,8 +57,6 @@ public class SettingsControllerTests : IDisposable
         Assert.Equal("192.168.1.5", response.IpAddress);
         Assert.Equal("mqtt-user", response.User);
         Assert.Equal("mqtt-password", response.Password);
-        Assert.NotNull(storedSettings.PasswordProtected);
-        Assert.NotEqual("mqtt-password", storedSettings.PasswordProtected);
     }
 
     [Fact]

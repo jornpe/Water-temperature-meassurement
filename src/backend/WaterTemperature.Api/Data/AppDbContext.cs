@@ -76,7 +76,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(settings => settings.Id).ValueGeneratedNever();
             entity.Property(settings => settings.Host).HasMaxLength(255);
             entity.Property(settings => settings.Username).HasMaxLength(255);
-            entity.Property(settings => settings.PasswordProtected).HasMaxLength(4096);
+            entity.Property(settings => settings.Password).HasMaxLength(255);
             entity.ToTable(table => table.HasCheckConstraint("CK_HomeAssistantIntegrationSettings_Singleton", "\"Id\" = 1"));
         });
 

@@ -79,3 +79,7 @@ dist/
 Icon?
 .idea/
 .vscode/
+
+# VS code
+.vscode/*
+*.code-workspace

@@ -20,7 +20,7 @@ public class HomeAssistantIntegrationSettings
     public string? Username { get; set; }
 
     [MaxLength(4096)]
-    public string? PasswordProtected { get; set; }
+    public string? Password { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }

@@ -144,7 +144,6 @@ public class HomeAssistantMqttSyncServiceTests
         services.AddLogging();
         services.AddDataProtection();
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
-        services.AddSingleton<ISecretProtectionService, SecretProtectionService>();
         return services.BuildServiceProvider();
     }
 
@@ -152,7 +151,6 @@ public class HomeAssistantMqttSyncServiceTests
     {
         return new HomeAssistantMqttSyncService(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            provider.GetRequiredService<ISecretProtectionService>(),
             provider.GetRequiredService<ILogger<HomeAssistantMqttSyncService>>());
     }
 }

@@ -47,25 +47,12 @@ builder.Services.Configure<JsonOptions>(options =>
     options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 });
 
-// Data protection is used to encrypt secrets (e.g. MQTT/device passwords) stored in the database.
-// Without a persisted key ring, keys are regenerated on every container restart/recreation,
-// which makes previously protected values undecipherable (effectively "losing" saved passwords).
-var dataProtectionBuilder = builder.Services.AddDataProtection()
-    .SetApplicationName("WaterTemperature.Api");
-
-var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
-if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
-{
-    dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
-}
-
 // Add controllers
 builder.Services.AddControllers();
 
 // Register JWT service
 builder.Services.AddSingleton<IJwtService, JwtService>();
 builder.Services.AddSingleton<IDeviceApiKeyService, DeviceApiKeyService>();
-builder.Services.AddSingleton<ISecretProtectionService, SecretProtectionService>();
 builder.Services.AddSingleton<HomeAssistantMqttSyncService>();
 builder.Services.AddSingleton<IHomeAssistantMqttSyncService>(serviceProvider => serviceProvider.GetRequiredService<HomeAssistantMqttSyncService>());
 builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<HomeAssistantMqttSyncService>());

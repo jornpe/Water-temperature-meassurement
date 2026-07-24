@@ -138,7 +138,6 @@ export default function Settings() {
                     label="Password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    type="password"
                     fullWidth
                   />
                   <Button type="submit" variant="contained" disabled={saving} sx={{ alignSelf: 'flex-start' }}>

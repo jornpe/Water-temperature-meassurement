@@ -49,7 +49,7 @@ public class DeviceUpdatesControllerTests : IDisposable
 
         _controller.Request.Headers[DeviceAuthenticationHeaders.ApiKeyHeaderName] = "invalid-key";
 
-        var result = await _controller.Update("device-1", new DeviceUpdateRequest("1.0.0", 20.5m, null, null));
+        var result = await _controller.Update("device-1", new DeviceUpdateRequest("1.0.0", 20.5m, null, null, null));
 
         Assert.IsType<UnauthorizedResult>(result.Result);
     }
@@ -74,6 +74,7 @@ public class DeviceUpdatesControllerTests : IDisposable
             "1.0.1",
             21.75m,
             new DevicePositionUpdateRequest(52.1, 4.3, 5.5, DateTime.UtcNow, 2.4, 0.8, 10, 7),
+            new Battery(true, 0, BatteryState.Unknown, 50, 1000, 1000),
             new DeviceNetworkDiagnosticsUpdateRequest(
                 "wifi",
                 new DeviceWifiDiagnosticsUpdateRequest("192.168.0.10", -55, "ssid", "bssid", 11, "192.168.0.1", "255.255.255.0", "8.8.8.8", "aa:bb:cc:dd:ee:ff"),
@@ -113,11 +114,13 @@ public class DeviceUpdatesControllerTests : IDisposable
         _controller.Request.Headers[DeviceAuthenticationHeaders.ApiKeyHeaderName] = credential.PlainTextApiKey;
 
         var request = new DeviceUpdateRequest(
-            "1.0.2",
-            22.1m,
-            null,
-            null,
-            new DeviceRuntimeConfigurationUpdateRequest(2, 60),
+            FirmwareVersion: "1.0.2",
+            Temperature: 22.1m,
+            Position: null,
+            Battery: null,
+            Network: null,
+            RuntimeConfiguration: new DeviceRuntimeConfigurationUpdateRequest(2, 60),
+            Logs:
             [
                 new DeviceLogEntryRequest(10, "boot", "info", DateTime.UtcNow, 1000),
                 new DeviceLogEntryRequest(11, "connected", "info", null, 2000),

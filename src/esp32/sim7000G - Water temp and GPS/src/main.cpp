@@ -66,7 +66,7 @@ struct RuntimeConfig
 
 RuntimeConfig config = {
     {
-        "Duni19-IoT",
+        "Duni19",
         "Eddie2007",
         15000,
         15000,
@@ -871,9 +871,38 @@ HttpResponse sendJsonPost(const String& path, const String& payload, const Strin
 
     if (activeTransport == NetworkTransport::Wifi)
     {
-        HttpClient client(wifiClient, config.backend.host.c_str(), config.backend.port);
+        // Discard any stale socket state from the previous request.
+        wifiClient.stop();
+
+        HttpClient client(
+            wifiClient,
+            config.backend.host.c_str(),
+            config.backend.port);
+
+        client.setHttpResponseTimeout(config.backend.requestTimeoutMs);
+
+        logInfo(
+            "POST http://"
+            + config.backend.host
+            + ":"
+            + String(config.backend.port)
+            + path);
+
         client.beginRequest();
-        client.post(path.c_str());
+
+        const int requestResult = client.post(path.c_str());
+
+        if (requestResult != 0)
+        {
+            logError(
+                "HTTP connection/request initialization failed. Error: "
+                + String(requestResult));
+
+            client.stop();
+            wifiClient.stop();
+            return response;
+        }
+
         client.sendHeader("Content-Type", "application/json");
         client.sendHeader("Content-Length", payload.length());
         client.sendHeader("Connection", "close");
@@ -884,13 +913,42 @@ HttpResponse sendJsonPost(const String& path, const String& payload, const Strin
         }
 
         client.beginBody();
-        client.print(payload);
+
+        const size_t bytesWritten = client.print(payload);
         client.endRequest();
 
+        if (bytesWritten != payload.length())
+        {
+            logError(
+                "HTTP body write incomplete. Wrote "
+                + String(bytesWritten)
+                + " of "
+                + String(payload.length())
+                + " bytes.");
+
+            client.stop();
+            wifiClient.stop();
+            return response;
+        }
+
         response.statusCode = client.responseStatusCode();
+
+        if (response.statusCode < 0)
+        {
+            logError(
+                "No valid HTTP response received. Error: "
+                + String(response.statusCode));
+
+            client.stop();
+            wifiClient.stop();
+            return response;
+        }
+
         response.body = client.responseBody();
         response.transportOk = true;
+
         client.stop();
+        wifiClient.stop();
         return response;
     }
 

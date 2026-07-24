@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
@@ -6,9 +7,9 @@ using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
 using MQTTnet;
-using MQTTnet.Client;
 using MQTTnet.Protocol;
 using WaterTemperature.Api.Data;
+using WaterTemperature.Api.Models.Devices;
 
 namespace WaterTemperature.Api.Services;
 
@@ -63,21 +64,21 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
-
-    private readonly IMqttClient _mqttClient = new MqttFactory().CreateMqttClient();
+    
+    
+    private readonly MqttClientFactory _mqttFactory = new();
+    private readonly IMqttClient _mqttClient;
     private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly ISecretProtectionService _secretProtectionService;
     private readonly ILogger<HomeAssistantMqttSyncService> _logger;
     private HomeAssistantBrokerSettings? _activeBrokerSettings;
 
     public HomeAssistantMqttSyncService(
         IServiceScopeFactory serviceScopeFactory,
-        ISecretProtectionService secretProtectionService,
         ILogger<HomeAssistantMqttSyncService> logger)
     {
         _serviceScopeFactory = serviceScopeFactory;
-        _secretProtectionService = secretProtectionService;
         _logger = logger;
+        _mqttClient = _mqttFactory.CreateMqttClient();
         _mqttClient.ApplicationMessageReceivedAsync += HandleApplicationMessageReceivedAsync;
         _mqttClient.ConnectedAsync += HandleConnectedAsync;
         _mqttClient.DisconnectedAsync += HandleDisconnectedAsync;
@@ -134,7 +135,11 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
             try
             {
                 await PublishAsync(new HomeAssistantPublishMessage(BackendAvailabilityTopic, "offline", true), cancellationToken);
-                await _mqttClient.DisconnectAsync(cancellationToken: cancellationToken);
+                await _mqttClient.DisconnectAsync(
+                    new MqttClientDisconnectOptionsBuilder()
+                        .WithReason(MqttClientDisconnectOptionsReason.NormalDisconnection)
+                        .Build(),
+                    cancellationToken: cancellationToken);
             }
             catch (Exception ex)
             {
@@ -294,7 +299,7 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
             settings.Host,
             settings.Port > 0 ? settings.Port : 1883,
             settings.Username,
-            _secretProtectionService.TryUnprotect(settings.PasswordProtected));
+            settings.Password);
     }
 
     private async Task EnsureConnectedAsync(HomeAssistantBrokerSettings settings, CancellationToken cancellationToken)
@@ -306,7 +311,11 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
 
         if (_mqttClient.IsConnected)
         {
-            await _mqttClient.DisconnectAsync(cancellationToken: cancellationToken);
+            await _mqttClient.DisconnectAsync(
+                new MqttClientDisconnectOptionsBuilder()
+                    .WithReason(MqttClientDisconnectOptionsReason.NormalDisconnection)
+                    .Build(),
+                cancellationToken: cancellationToken);
         }
 
         var optionsBuilder = new MqttClientOptionsBuilder()
@@ -362,9 +371,10 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
             return Task.CompletedTask;
         }
 
-        var payload = eventArgs.ApplicationMessage.PayloadSegment.Count == 0
+        var payloadBytes = eventArgs.ApplicationMessage.Payload;
+        var payload = payloadBytes.IsEmpty
             ? string.Empty
-            : System.Text.Encoding.UTF8.GetString(eventArgs.ApplicationMessage.PayloadSegment);
+            : System.Text.Encoding.UTF8.GetString(payloadBytes.ToArray());
 
         if (string.Equals(payload, "online", StringComparison.OrdinalIgnoreCase))
         {
@@ -376,7 +386,12 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
 
     private async Task HandleConnectedAsync(MqttClientConnectedEventArgs _)
     {
-        await _mqttClient.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(HomeAssistantStatusTopic).Build());
+        var subscribeOptions = _mqttFactory
+            .CreateSubscribeOptionsBuilder()
+            .WithTopicFilter(HomeAssistantStatusTopic)
+            .Build();
+        
+        await _mqttClient.SubscribeAsync(subscribeOptions);
         await PublishAsync(new HomeAssistantPublishMessage(BackendAvailabilityTopic, "online", true), CancellationToken.None);
     }
 
@@ -404,12 +419,14 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
                 unitOfMeasurement: "°C",
                 stateClass: "measurement",
                 suggestedDisplayPrecision: 2),
+            
             ["location"] = BuildDeviceTrackerComponent(uniquePrefix, GetLocationAttributesTopic(device.DeviceIdentifier)),
             ["altitude"] = BuildSensorComponent(uniquePrefix, "altitude", "Altitude", GetStateTopic(device.DeviceIdentifier, "altitude"), unitOfMeasurement: "m"),
             ["speed"] = BuildSensorComponent(uniquePrefix, "speed", "Speed", GetStateTopic(device.DeviceIdentifier, "speed"), unitOfMeasurement: "kn"),
             ["hdop"] = BuildSensorComponent(uniquePrefix, "hdop", "HDOP", GetStateTopic(device.DeviceIdentifier, "hdop")),
             ["satellites_visible"] = BuildSensorComponent(uniquePrefix, "satellites_visible", "Satellites visible", GetStateTopic(device.DeviceIdentifier, "satellites-visible")),
             ["satellites_used"] = BuildSensorComponent(uniquePrefix, "satellites_used", "Satellites used", GetStateTopic(device.DeviceIdentifier, "satellites-used")),
+            
             ["network_transport"] = BuildSensorComponent(uniquePrefix, "network_transport", "Network transport", GetStateTopic(device.DeviceIdentifier, "network-transport"), entityCategory: "diagnostic", enabledByDefault: true),
             ["firmware_version"] = BuildSensorComponent(uniquePrefix, "firmware_version", "Firmware version", GetStateTopic(device.DeviceIdentifier, "firmware-version"), entityCategory: "diagnostic", enabledByDefault: true),
             ["last_seen"] = BuildSensorComponent(uniquePrefix, "last_seen", "Last seen", GetStateTopic(device.DeviceIdentifier, "last-seen"), deviceClass: "timestamp", entityCategory: "diagnostic", enabledByDefault: true),
@@ -419,6 +436,7 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
             ["desired_configuration_version"] = BuildSensorComponent(uniquePrefix, "desired_configuration_version", "Desired configuration version", GetStateTopic(device.DeviceIdentifier, "desired-configuration-version"), entityCategory: "diagnostic", enabledByDefault: true),
             ["reported_configuration_version"] = BuildSensorComponent(uniquePrefix, "reported_configuration_version", "Reported configuration version", GetStateTopic(device.DeviceIdentifier, "reported-configuration-version"), entityCategory: "diagnostic", enabledByDefault: true),
             ["reported_report_interval_seconds"] = BuildSensorComponent(uniquePrefix, "reported_report_interval_seconds", "Reported report interval", GetStateTopic(device.DeviceIdentifier, "reported-report-interval-seconds"), unitOfMeasurement: "s", entityCategory: "diagnostic", enabledByDefault: true),
+            
             ["wifi_local_ip"] = BuildSensorComponent(uniquePrefix, "wifi_local_ip", "Wi-Fi local IP", GetStateTopic(device.DeviceIdentifier, "wifi-local-ip"), entityCategory: "diagnostic", enabledByDefault: true),
             ["wifi_rssi"] = BuildSensorComponent(uniquePrefix, "wifi_rssi", "Wi-Fi RSSI", GetStateTopic(device.DeviceIdentifier, "wifi-rssi"), deviceClass: "signal_strength", unitOfMeasurement: "dBm", entityCategory: "diagnostic", enabledByDefault: true),
             ["wifi_ssid"] = BuildSensorComponent(uniquePrefix, "wifi_ssid", "Wi-Fi SSID", GetStateTopic(device.DeviceIdentifier, "wifi-ssid"), entityCategory: "diagnostic", enabledByDefault: true),
@@ -428,12 +446,20 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
             ["wifi_subnet_mask"] = BuildSensorComponent(uniquePrefix, "wifi_subnet_mask", "Wi-Fi subnet mask", GetStateTopic(device.DeviceIdentifier, "wifi-subnet-mask"), entityCategory: "diagnostic", enabledByDefault: true),
             ["wifi_dns_ip"] = BuildSensorComponent(uniquePrefix, "wifi_dns_ip", "Wi-Fi DNS IP", GetStateTopic(device.DeviceIdentifier, "wifi-dns-ip"), entityCategory: "diagnostic", enabledByDefault: true),
             ["wifi_mac_address"] = BuildSensorComponent(uniquePrefix, "wifi_mac_address", "Wi-Fi MAC address", GetStateTopic(device.DeviceIdentifier, "wifi-mac-address"), entityCategory: "diagnostic", enabledByDefault: true),
+            
             ["cellular_local_ip"] = BuildSensorComponent(uniquePrefix, "cellular_local_ip", "Cellular local IP", GetStateTopic(device.DeviceIdentifier, "cellular-local-ip"), entityCategory: "diagnostic", enabledByDefault: true),
             ["cellular_sim_status"] = BuildSensorComponent(uniquePrefix, "cellular_sim_status", "Cellular SIM status", GetStateTopic(device.DeviceIdentifier, "cellular-sim-status"), entityCategory: "diagnostic", enabledByDefault: true),
             ["cellular_network_connected"] = BuildBinarySensorComponent(uniquePrefix, "cellular_network_connected", "Cellular network connected", GetStateTopic(device.DeviceIdentifier, "cellular-network-connected"), entityCategory: "diagnostic", enabledByDefault: true),
             ["cellular_gprs_connected"] = BuildBinarySensorComponent(uniquePrefix, "cellular_gprs_connected", "Cellular GPRS connected", GetStateTopic(device.DeviceIdentifier, "cellular-gprs-connected"), entityCategory: "diagnostic", enabledByDefault: true),
             ["cellular_operator"] = BuildSensorComponent(uniquePrefix, "cellular_operator", "Cellular operator", GetStateTopic(device.DeviceIdentifier, "cellular-operator"), entityCategory: "diagnostic", enabledByDefault: true),
             ["cellular_signal_quality"] = BuildSensorComponent(uniquePrefix, "cellular_signal_quality", "Cellular signal quality", GetStateTopic(device.DeviceIdentifier, "cellular-signal-quality"), entityCategory: "diagnostic", enabledByDefault: true),
+            
+            ["battery_state"] = BuildSensorComponent(uniquePrefix, "battery_state", "Battery State", GetStateTopic(device.DeviceIdentifier, "battery-state"), entityCategory: "diagnostic", enabledByDefault: true, deviceClass: "enum", options: Enum.GetNames<BatteryState>()),
+            ["battery_percentage"] = BuildSensorComponent(uniquePrefix, "battery_percentage", "Battery Percentage", GetStateTopic(device.DeviceIdentifier, "battery-percentage"), enabledByDefault: true, deviceClass: "battery", unitOfMeasurement: "%", stateClass: "measurement"),
+            ["battery_adc_voltage"] = BuildSensorComponent(uniquePrefix, "battery_adc_voltage", "Battery ADC Voltage", GetStateTopic(device.DeviceIdentifier, "battery-adc-voltage"), entityCategory: "diagnostic", enabledByDefault: true, deviceClass: "voltage", unitOfMeasurement: "V", stateClass: "measurement"),
+            ["battery_modem_millivoltage"] = BuildSensorComponent(uniquePrefix, "battery_modem_millivoltage", "Battery Modem Millivoltage", GetStateTopic(device.DeviceIdentifier, "battery-modem-millivoltage"), entityCategory: "diagnostic", enabledByDefault: true, deviceClass: "voltage", unitOfMeasurement: "mV", stateClass: "measurement"),
+            ["battery_modem_read_valid"] = BuildBinarySensorComponent(uniquePrefix, "battery_modem_read_valid", "Battery Modem Read Valid", GetStateTopic(device.DeviceIdentifier, "battery-modem-read-valid"), entityCategory: "diagnostic", enabledByDefault: true),
+            ["battery_recorded_time"] = BuildSensorComponent(uniquePrefix, "battery_recorded_time", "Battery Recorded Time", GetStateTopic(device.DeviceIdentifier, "battery-recorded-time"), entityCategory: "diagnostic", enabledByDefault: true, deviceClass: "timestamp"),
         };
 
         var payload = new Dictionary<string, object?>
@@ -516,11 +542,13 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
         };
 
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "temperature"), FormatNumber(device.LatestTemperatureCelsius));
+        
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "altitude"), FormatNumber(device.LatestAltitudeMeters));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "speed"), FormatNumber(device.LatestSpeedKnots));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "hdop"), FormatNumber(device.LatestHdop));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "satellites-visible"), FormatNumber(device.LatestSatellitesVisible));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "satellites-used"), FormatNumber(device.LatestSatellitesUsed));
+        
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "network-transport"), device.LatestNetworkTransport);
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "firmware-version"), device.FirmwareVersion);
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "last-seen"), FormatTimestamp(device.LastSeenAtUtc));
@@ -530,6 +558,7 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "desired-configuration-version"), FormatNumber<int>(device.DesiredConfigurationVersion));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "reported-configuration-version"), FormatNumber<int>(device.ReportedConfigurationVersion));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "reported-report-interval-seconds"), FormatNumber<int>(device.ReportedReportIntervalSeconds));
+        
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "wifi-local-ip"), device.LatestWifiLocalIp);
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "wifi-rssi"), FormatNumber(device.LatestWifiRssiDbm));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "wifi-ssid"), device.LatestWifiSsid);
@@ -539,10 +568,24 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "wifi-subnet-mask"), device.LatestWifiSubnetMask);
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "wifi-dns-ip"), device.LatestWifiDnsIp);
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "wifi-mac-address"), device.LatestWifiMacAddress);
+        
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "cellular-local-ip"), device.LatestCellularLocalIp);
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "cellular-sim-status"), device.LatestCellularSimStatus);
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "cellular-operator"), device.LatestCellularOperator);
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "cellular-signal-quality"), FormatNumber(device.LatestCellularSignalQuality));
+        
+        AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-state"), device.LatestBatteryState.ToString());
+        AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-percentage"), FormatNumber(device.LatestBatteryPercentage));
+        AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-adc-voltage"), FormatNumber(device.LatestBatteryAdcVoltage));
+        AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-modem-millivoltage"), FormatNumber(device.LatestBatteryModemMillivolts));
+        AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-recorded-time"), FormatTimestamp(device.LatestBatteryAtUtc));
+
+        if (device.LatestBatteryModemReadingValid.HasValue)
+        {
+            messages.Add(new HomeAssistantPublishMessage(
+                GetStateTopic(device.DeviceIdentifier, "battery-modem-read-valid"),
+                device.LatestBatteryModemReadingValid.Value ? "ON" : "OFF"));
+        }
 
         if (device.LatestCellularNetworkConnected.HasValue)
         {
@@ -583,7 +626,8 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
         string? stateClass = null,
         string? entityCategory = null,
         bool? enabledByDefault = null,
-        int? suggestedDisplayPrecision = null)
+        int? suggestedDisplayPrecision = null, 
+        IEnumerable<string>? options = null)
     {
         return new Dictionary<string, object?>
         {
@@ -597,6 +641,7 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
             ["entity_category"] = entityCategory,
             ["enabled_by_default"] = enabledByDefault,
             ["suggested_display_precision"] = suggestedDisplayPrecision,
+            ["options"] = options
         };
     }
 
