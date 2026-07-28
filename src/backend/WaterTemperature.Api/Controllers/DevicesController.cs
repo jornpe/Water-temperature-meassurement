@@ -204,12 +204,12 @@ public class DevicesController(
 
         if (normalizedFromUtc.HasValue)
         {
-            logsQuery = logsQuery.Where(entry => entry.ReceivedAtUtc >= normalizedFromUtc.Value);
+            logsQuery = logsQuery.Where(entry => entry.TimestampUtc >= normalizedFromUtc.Value);
         }
 
         if (normalizedToUtc.HasValue)
         {
-            logsQuery = logsQuery.Where(entry => entry.ReceivedAtUtc <= normalizedToUtc.Value);
+            logsQuery = logsQuery.Where(entry => entry.TimestampUtc <= normalizedToUtc.Value);
         }
 
         var totalCount = includeTotalCount
@@ -226,8 +226,8 @@ public class DevicesController(
         }
 
         IQueryable<DeviceLogEntry> orderedQuery = afterId.HasValue
-            ? logsQuery.OrderBy(entry => entry.Id)
-            : logsQuery.OrderByDescending(entry => entry.Id);
+            ? logsQuery.OrderBy(entry => entry.TimestampUtc).ThenBy(entry => entry.Id)
+            : logsQuery.OrderByDescending(entry => entry.TimestampUtc).ThenByDescending(entry => entry.Id);
 
         if (!beforeId.HasValue && !afterId.HasValue && normalizedPage > 1)
         {
@@ -238,12 +238,9 @@ public class DevicesController(
             .Take(normalizedPageSize + 1)
             .Select(entry => new DeviceLogEntryResponse(
                 entry.Id,
-                entry.SequenceNumber,
                 entry.Level,
                 entry.Message,
-                entry.DeviceTimestampUtc,
-                entry.DeviceUptimeMs,
-                entry.ReceivedAtUtc))
+                entry.TimestampUtc))
             .ToListAsync(cancellationToken);
 
         var hasMore = items.Count > normalizedPageSize;
@@ -290,7 +287,7 @@ public class DevicesController(
 
         if (normalizedBeforeUtc.HasValue)
         {
-            logsQuery = logsQuery.Where(entry => entry.ReceivedAtUtc < normalizedBeforeUtc.Value);
+            logsQuery = logsQuery.Where(entry => entry.TimestampUtc < normalizedBeforeUtc.Value);
         }
 
         int deletedCount;

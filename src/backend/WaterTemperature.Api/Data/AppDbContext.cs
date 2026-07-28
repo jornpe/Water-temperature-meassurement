@@ -84,10 +84,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.Property(entry => entry.Level).HasMaxLength(32);
             entity.Property(entry => entry.Message).HasMaxLength(2048).IsRequired();
-            entity.HasIndex(entry => new { entry.DeviceId, entry.SequenceNumber }).IsUnique();
             entity.HasIndex(entry => new { entry.DeviceId, entry.Id });
             entity.HasIndex(entry => new { entry.DeviceId, entry.Level, entry.Id });
-            entity.HasIndex(entry => new { entry.DeviceId, entry.ReceivedAtUtc, entry.Id });
+            entity.HasIndex(entry => new { entry.DeviceId, entry.TimestampUtc, entry.Id });
         });
 
         modelBuilder.Entity<DeviceTemperatureHistory>(entity =>

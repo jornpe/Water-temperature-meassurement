@@ -98,7 +98,7 @@ public class DeviceUpdatesControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task Update_WithRuntimeConfigurationAndDuplicateLogs_IsIdempotent()
+    public async Task Update_WithRuntimeConfigurationAndLogs_StoresCalculatedLogTimestamps()
     {
         var credential = _deviceApiKeyService.CreateCredential();
         _dbContext.Devices.Add(new Device
@@ -120,31 +120,27 @@ public class DeviceUpdatesControllerTests : IDisposable
             Battery: null,
             Network: null,
             RuntimeConfiguration: new DeviceRuntimeConfigurationUpdateRequest(2, 60),
+            DeviceUptimeMs: 3000,
             Logs:
             [
-                new DeviceLogEntryRequest(10, "boot", "info", DateTime.UtcNow, 1000),
-                new DeviceLogEntryRequest(11, "connected", "info", null, 2000),
-                new DeviceLogEntryRequest(11, "connected duplicate", "info", null, 2000)
+                new DeviceLogEntryRequest(1000, "boot", "info"),
+                new DeviceLogEntryRequest(2000, "connected", "info")
             ]);
 
-        var firstResult = await _controller.Update("device-1", request);
-        var firstOk = Assert.IsType<OkObjectResult>(firstResult.Result);
-        var firstResponse = Assert.IsType<DeviceUpdateResponse>(firstOk.Value);
-
-        var secondResult = await _controller.Update("device-1", request);
-        var secondOk = Assert.IsType<OkObjectResult>(secondResult.Result);
-        var secondResponse = Assert.IsType<DeviceUpdateResponse>(secondOk.Value);
+        var result = await _controller.Update("device-1", request);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<DeviceUpdateResponse>(ok.Value);
 
         var device = await _dbContext.Devices.SingleAsync();
-        var logs = await _dbContext.DeviceLogEntries.OrderBy(entry => entry.SequenceNumber).ToListAsync();
+        var logs = await _dbContext.DeviceLogEntries.OrderBy(entry => entry.TimestampUtc).ToListAsync();
 
-        Assert.Equal(11, firstResponse.HighestAcknowledgedLogSequenceNumber);
-        Assert.Equal(11, secondResponse.HighestAcknowledgedLogSequenceNumber);
-        Assert.Equal(3, firstResponse.Configuration.DesiredConfigurationVersion);
+        Assert.Equal(3, response.Configuration.DesiredConfigurationVersion);
         Assert.Equal(2, device.ReportedConfigurationVersion);
         Assert.Equal(60, device.ReportedReportIntervalSeconds);
         Assert.NotNull(device.RuntimeConfigurationReportedAtUtc);
-        Assert.Equal([10L, 11L], logs.Select(entry => entry.SequenceNumber).ToArray());
+        Assert.Equal(["boot", "connected"], logs.Select(entry => entry.Message).ToArray());
+        Assert.Equal(response.ReceivedAtUtc.AddSeconds(-2), logs[0].TimestampUtc);
+        Assert.Equal(response.ReceivedAtUtc.AddSeconds(-1), logs[1].TimestampUtc);
     }
 
     public void Dispose()

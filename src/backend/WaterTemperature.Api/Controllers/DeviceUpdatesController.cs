@@ -13,6 +13,29 @@ public class DeviceUpdatesController(
     IDeviceApiKeyService deviceApiKeyService,
     IHomeAssistantMqttSyncService homeAssistantMqttSyncService) : ApiControllerBase
 {
+    private static DateTime ResolveLogTimestampUtc(
+        long timestampMs,
+        long? deviceUptimeMs,
+        DateTime receivedAtUtc)
+    {
+        if (timestampMs < 0
+            || timestampMs > uint.MaxValue
+            || !deviceUptimeMs.HasValue
+            || deviceUptimeMs.Value < 0
+            || deviceUptimeMs.Value > uint.MaxValue)
+        {
+            return receivedAtUtc;
+        }
+
+        var loggedAt = (ulong)timestampMs;
+        var currentUptime = (ulong)deviceUptimeMs.Value;
+        var ageMs = currentUptime >= loggedAt
+            ? currentUptime - loggedAt
+            : (ulong)uint.MaxValue + 1 + currentUptime - loggedAt;
+
+        return receivedAtUtc.AddMilliseconds(-(double)ageMs);
+    }
+
     [HttpPost("{deviceId}/updates")]
     public async Task<ActionResult<DeviceUpdateResponse>> Update(string deviceId, [FromBody] DeviceUpdateRequest request)
     {
@@ -135,50 +158,25 @@ public class DeviceUpdatesController(
             device.RuntimeConfigurationReportedAtUtc = now;
         }
 
-        long? highestAcknowledgedLogSequenceNumber = null;
-
         if (request.Logs is { Count: > 0 })
         {
             var validLogs = request.Logs
-                .Where(log => log.SequenceNumber >= 0 && !string.IsNullOrWhiteSpace(log.Message))
-                .GroupBy(log => log.SequenceNumber)
-                .Select(group => group.First())
-                .OrderBy(log => log.SequenceNumber)
+                .Where(log => log.TimestampMs >= 0
+                    && log.TimestampMs <= uint.MaxValue
+                    && !string.IsNullOrWhiteSpace(log.Message))
+                .Select(log => new DeviceLogEntry
+                {
+                    DeviceId = device.Id,
+                    Level = string.IsNullOrWhiteSpace(log.Level) ? null : log.Level.Trim().ToLowerInvariant(),
+                    Message = log.Message.Trim(),
+                    TimestampUtc = ResolveLogTimestampUtc(log.TimestampMs, request.DeviceUptimeMs, now),
+                })
+                .OrderBy(log => log.TimestampUtc)
                 .ToList();
 
             if (validLogs.Count > 0)
             {
-                var submittedSequenceNumbers = validLogs
-                    .Select(log => log.SequenceNumber)
-                    .ToHashSet();
-
-                var existingSequenceNumbers = await dbContext.DeviceLogEntries
-                    .Where(entry => entry.DeviceId == device.Id && submittedSequenceNumbers.Contains(entry.SequenceNumber))
-                    .Select(entry => entry.SequenceNumber)
-                    .ToListAsync();
-
-                var existingSequenceNumberSet = existingSequenceNumbers.ToHashSet();
-
-                var newEntries = validLogs
-                    .Where(log => !existingSequenceNumberSet.Contains(log.SequenceNumber))
-                    .Select(log => new DeviceLogEntry
-                    {
-                        DeviceId = device.Id,
-                        SequenceNumber = log.SequenceNumber,
-                        Level = string.IsNullOrWhiteSpace(log.Level) ? null : log.Level.Trim().ToLowerInvariant(),
-                        Message = log.Message.Trim(),
-                        DeviceTimestampUtc = log.DeviceTimestampUtc,
-                        DeviceUptimeMs = log.DeviceUptimeMs,
-                        ReceivedAtUtc = now,
-                    })
-                    .ToList();
-
-                if (newEntries.Count > 0)
-                {
-                    dbContext.DeviceLogEntries.AddRange(newEntries);
-                }
-
-                highestAcknowledgedLogSequenceNumber = validLogs.Max(log => log.SequenceNumber);
+                dbContext.DeviceLogEntries.AddRange(validLogs);
             }
         }
 
@@ -192,7 +190,6 @@ public class DeviceUpdatesController(
         return Ok(new DeviceUpdateResponse(
             device.DeviceIdentifier,
             new DeviceConfigurationResponse(device.ReportIntervalSeconds, device.DesiredConfigurationVersion),
-            now,
-            highestAcknowledgedLogSequenceNumber));
+            now));
     }
 }

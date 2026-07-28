@@ -135,11 +135,9 @@ public record RegisteredDeviceUpdateRequest(
     string? HomeAssistantDeviceName = null);
 
 public record DeviceLogEntryRequest(
-    long SequenceNumber,
+    long TimestampMs,
     string Message,
-    string? Level,
-    DateTime? DeviceTimestampUtc,
-    long? DeviceUptimeMs);
+    string? Level);
 
 public record DeviceRuntimeConfigurationUpdateRequest(
     int? AppliedConfigurationVersion,
@@ -186,6 +184,7 @@ public record DeviceUpdateRequest(
     Battery? Battery,
     DeviceNetworkDiagnosticsUpdateRequest? Network,
     DeviceRuntimeConfigurationUpdateRequest? RuntimeConfiguration = null,
+    long? DeviceUptimeMs = null,
     IReadOnlyList<DeviceLogEntryRequest>? Logs = null);
 
 public enum BatteryState
@@ -207,17 +206,13 @@ public record Battery(
 public record DeviceUpdateResponse(
     string DeviceId,
     DeviceConfigurationResponse Configuration,
-    DateTime ReceivedAtUtc,
-    long? HighestAcknowledgedLogSequenceNumber);
+    DateTime ReceivedAtUtc);
 
 public record DeviceLogEntryResponse(
     int Id,
-    long SequenceNumber,
     string? Level,
     string Message,
-    DateTime? DeviceTimestampUtc,
-    long? DeviceUptimeMs,
-    DateTime ReceivedAtUtc);
+    DateTime TimestampUtc);
 
 public record DeviceLogsResponse(
     int DeviceId,

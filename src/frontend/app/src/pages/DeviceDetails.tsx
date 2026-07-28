@@ -127,7 +127,12 @@ export default function DeviceDetails() {
   const [retentionPresetHours, setRetentionPresetHours] = useState('24')
   const [customRetentionDays, setCustomRetentionDays] = useState('30')
 
-  const logEntries = logs ? [...logs.items].sort((left, right) => left.id - right.id) : []
+  const logEntries = logs
+    ? [...logs.items].sort((left, right) => {
+        const timestampDifference = Date.parse(left.timestampUtc) - Date.parse(right.timestampUtc)
+        return timestampDifference !== 0 ? timestampDifference : left.id - right.id
+      })
+    : []
 
   const availableLogSeverities = Array.from(
     new Set([
@@ -1164,8 +1169,8 @@ export default function DeviceDetails() {
                           sx={{
                             display: 'grid',
                             gridTemplateColumns: {
-                              xs: 'minmax(48px, 56px) minmax(120px, 140px) minmax(72px, 96px) minmax(0, 1fr)',
-                              sm: 'minmax(56px, 72px) minmax(180px, 200px) minmax(88px, 110px) minmax(0, 1fr)',
+                              xs: 'minmax(120px, 140px) minmax(72px, 96px) minmax(0, 1fr)',
+                              sm: 'minmax(180px, 200px) minmax(88px, 110px) minmax(0, 1fr)',
                             },
                             gap: 2,
                             px: 2,
@@ -1178,9 +1183,6 @@ export default function DeviceDetails() {
                             bgcolor: 'background.paper',
                           }}
                         >
-                          <Typography variant="caption" color="text.secondary">
-                            #
-                          </Typography>
                           <Typography variant="caption" color="text.secondary">
                             Time
                           </Typography>
@@ -1198,8 +1200,8 @@ export default function DeviceDetails() {
                             sx={{
                               display: 'grid',
                               gridTemplateColumns: {
-                                xs: 'minmax(48px, 56px) minmax(120px, 140px) minmax(72px, 96px) minmax(0, 1fr)',
-                                sm: 'minmax(56px, 72px) minmax(180px, 200px) minmax(88px, 110px) minmax(0, 1fr)',
+                                xs: 'minmax(120px, 140px) minmax(72px, 96px) minmax(0, 1fr)',
+                                sm: 'minmax(180px, 200px) minmax(88px, 110px) minmax(0, 1fr)',
                               },
                               gap: 2,
                               px: 2,
@@ -1213,10 +1215,7 @@ export default function DeviceDetails() {
                             }}
                           >
                             <Typography variant="body2" color="text.secondary" sx={{ pt: 0.25 }}>
-                              {entry.sequenceNumber}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ pt: 0.25 }}>
-                              {new Date(entry.receivedAtUtc).toLocaleString()}
+                              {new Date(entry.timestampUtc).toLocaleString()}
                             </Typography>
                             <Chip
                               label={entry.level ?? 'unknown'}

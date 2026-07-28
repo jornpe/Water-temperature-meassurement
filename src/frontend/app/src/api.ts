@@ -206,12 +206,9 @@ export interface DeviceDeleteResponse {
 
 export interface DeviceLogEntry {
   id: number
-  sequenceNumber: number
   level?: string | null
   message: string
-  deviceTimestampUtc?: string | null
-  deviceUptimeMs?: number | null
-  receivedAtUtc: string
+  timestampUtc: string
 }
 
 export interface DeviceLogsResponse {

@@ -10,8 +10,6 @@ public class DeviceLogEntry
     public int DeviceId { get; set; }
     public Device Device { get; set; } = null!;
 
-    public long SequenceNumber { get; set; }
-
     [MaxLength(32)]
     public string? Level { get; set; }
 
@@ -19,7 +17,5 @@ public class DeviceLogEntry
     [MaxLength(2048)]
     public string Message { get; set; } = string.Empty;
 
-    public DateTime? DeviceTimestampUtc { get; set; }
-    public long? DeviceUptimeMs { get; set; }
-    public DateTime ReceivedAtUtc { get; set; }
+    public DateTime TimestampUtc { get; set; }
 }

@@ -128,10 +128,11 @@ public class DevicesControllerTests : IDisposable
         _dbContext.Devices.Add(device);
         await _dbContext.SaveChangesAsync();
 
+        var now = DateTime.UtcNow;
         _dbContext.DeviceLogEntries.AddRange(
-            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 1, Message = "one", ReceivedAtUtc = DateTime.UtcNow.AddMinutes(-2) },
-            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 2, Message = "two", ReceivedAtUtc = DateTime.UtcNow.AddMinutes(-1) },
-            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 3, Message = "three", ReceivedAtUtc = DateTime.UtcNow });
+            new DeviceLogEntry { DeviceId = device.Id, Message = "one", TimestampUtc = now.AddMinutes(-2) },
+            new DeviceLogEntry { DeviceId = device.Id, Message = "two", TimestampUtc = now.AddMinutes(-1) },
+            new DeviceLogEntry { DeviceId = device.Id, Message = "three", TimestampUtc = now });
         await _dbContext.SaveChangesAsync();
 
         var result = await _controller.GetDeviceLogs(device.Id, 1, 2);
@@ -141,7 +142,7 @@ public class DevicesControllerTests : IDisposable
 
         Assert.Equal(3L, response.TotalCount);
         Assert.Equal(2, response.Items.Count);
-        Assert.Equal([3L, 2L], response.Items.Select(item => item.SequenceNumber).ToArray());
+        Assert.Equal(["three", "two"], response.Items.Select(item => item.Message).ToArray());
         Assert.True(response.HasMore);
         Assert.Equal(response.Items[^1].Id, response.NextBeforeId);
     }
@@ -155,9 +156,9 @@ public class DevicesControllerTests : IDisposable
 
         var now = DateTime.UtcNow;
         _dbContext.DeviceLogEntries.AddRange(
-            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 1, Level = "info", Message = "startup complete", ReceivedAtUtc = now.AddDays(-2) },
-            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 2, Level = "warning", Message = "Cellular signal is weak", ReceivedAtUtc = now.AddHours(-2) },
-            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 3, Level = "warning", Message = "unrelated warning", ReceivedAtUtc = now });
+            new DeviceLogEntry { DeviceId = device.Id, Level = "info", Message = "startup complete", TimestampUtc = now.AddDays(-2) },
+            new DeviceLogEntry { DeviceId = device.Id, Level = "warning", Message = "Cellular signal is weak", TimestampUtc = now.AddHours(-2) },
+            new DeviceLogEntry { DeviceId = device.Id, Level = "warning", Message = "unrelated warning", TimestampUtc = now });
         await _dbContext.SaveChangesAsync();
 
         var result = await _controller.GetDeviceLogs(
@@ -173,7 +174,7 @@ public class DevicesControllerTests : IDisposable
 
         Assert.Equal(1L, response.TotalCount);
         var entry = Assert.Single(response.Items);
-        Assert.Equal(2, entry.SequenceNumber);
+        Assert.Equal("Cellular signal is weak", entry.Message);
         Assert.False(response.HasMore);
     }
 
@@ -185,12 +186,11 @@ public class DevicesControllerTests : IDisposable
         await _dbContext.SaveChangesAsync();
 
         var entries = Enumerable.Range(1, 5)
-            .Select(sequence => new DeviceLogEntry
+            .Select(index => new DeviceLogEntry
             {
                 DeviceId = device.Id,
-                SequenceNumber = sequence,
-                Message = $"line {sequence}",
-                ReceivedAtUtc = DateTime.UtcNow,
+                Message = $"line {index}",
+                TimestampUtc = DateTime.UtcNow.AddSeconds(index),
             })
             .ToArray();
         _dbContext.DeviceLogEntries.AddRange(entries);
@@ -207,7 +207,7 @@ public class DevicesControllerTests : IDisposable
 
         Assert.Null(response.TotalCount);
         Assert.True(response.HasMore);
-        Assert.Equal([3L, 2L], response.Items.Select(item => item.SequenceNumber).ToArray());
+        Assert.Equal(["line 3", "line 2"], response.Items.Select(item => item.Message).ToArray());
     }
 
     [Fact]
@@ -219,8 +219,8 @@ public class DevicesControllerTests : IDisposable
 
         var cutoff = DateTime.UtcNow.AddHours(-24);
         _dbContext.DeviceLogEntries.AddRange(
-            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 1, Message = "old", ReceivedAtUtc = cutoff.AddMinutes(-1) },
-            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 2, Message = "recent", ReceivedAtUtc = cutoff.AddMinutes(1) });
+            new DeviceLogEntry { DeviceId = device.Id, Message = "old", TimestampUtc = cutoff.AddMinutes(-1) },
+            new DeviceLogEntry { DeviceId = device.Id, Message = "recent", TimestampUtc = cutoff.AddMinutes(1) });
         await _dbContext.SaveChangesAsync();
 
         var result = await _controller.DeleteDeviceLogs(device.Id, cutoff);
@@ -230,7 +230,7 @@ public class DevicesControllerTests : IDisposable
 
         Assert.Equal(1, response.DeletedCount);
         var remaining = await _dbContext.DeviceLogEntries.SingleAsync();
-        Assert.Equal(2, remaining.SequenceNumber);
+        Assert.Equal("recent", remaining.Message);
     }
 
     [Fact]
