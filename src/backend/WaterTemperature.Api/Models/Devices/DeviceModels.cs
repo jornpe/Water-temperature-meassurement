@@ -224,8 +224,16 @@ public record DeviceLogsResponse(
     string DeviceIdentifier,
     int Page,
     int PageSize,
-    int TotalCount,
+    long? TotalCount,
+    bool HasMore,
+    int? NextBeforeId,
     IReadOnlyList<DeviceLogEntryResponse> Items);
+
+public record DeviceLogsDeleteResponse(
+    int Id,
+    string DeviceId,
+    DateTime? DeletedBeforeUtc,
+    int DeletedCount);
 
 public record DeviceTelemetryClearResponse(
     int Id,

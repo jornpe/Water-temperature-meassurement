@@ -165,7 +165,7 @@ public class DeviceUpdatesController(
                     {
                         DeviceId = device.Id,
                         SequenceNumber = log.SequenceNumber,
-                        Level = string.IsNullOrWhiteSpace(log.Level) ? null : log.Level.Trim(),
+                        Level = string.IsNullOrWhiteSpace(log.Level) ? null : log.Level.Trim().ToLowerInvariant(),
                         Message = log.Message.Trim(),
                         DeviceTimestampUtc = log.DeviceTimestampUtc,
                         DeviceUptimeMs = log.DeviceUptimeMs,

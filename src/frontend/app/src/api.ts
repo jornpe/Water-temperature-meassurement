@@ -219,8 +219,28 @@ export interface DeviceLogsResponse {
   deviceIdentifier: string
   page: number
   pageSize: number
-  totalCount: number
+  totalCount?: number | null
+  hasMore: boolean
+  nextBeforeId?: number | null
   items: DeviceLogEntry[]
+}
+
+export interface DeviceLogQuery {
+  pageSize?: number
+  search?: string
+  level?: string
+  fromUtc?: string
+  toUtc?: string
+  beforeId?: number
+  afterId?: number
+  includeTotalCount?: boolean
+}
+
+export interface DeviceLogsDeleteResponse {
+  id: number
+  deviceId: string
+  deletedBeforeUtc?: string | null
+  deletedCount: number
 }
 
 // In Docker/runtime, Nginx proxies /api to API_BASE_URL. In dev, Vite proxy handles /api.
@@ -238,13 +258,28 @@ export async function getDevice(id: number): Promise<DeviceDetail> {
   return authenticatedFetch(`${base}/api/devices/${id}`)
 }
 
-export async function getDeviceLogs(id: number, page = 1, pageSize = 100): Promise<DeviceLogsResponse> {
-  const query = new URLSearchParams({
-    page: String(page),
-    pageSize: String(pageSize),
-  })
+export async function getDeviceLogs(id: number, options: DeviceLogQuery = {}): Promise<DeviceLogsResponse> {
+  const query = new URLSearchParams({ pageSize: String(options.pageSize ?? 100) })
+
+  if (options.search?.trim()) query.set('search', options.search.trim())
+  if (options.level?.trim()) query.set('level', options.level.trim())
+  if (options.fromUtc) query.set('fromUtc', options.fromUtc)
+  if (options.toUtc) query.set('toUtc', options.toUtc)
+  if (options.beforeId !== undefined) query.set('beforeId', String(options.beforeId))
+  if (options.afterId !== undefined) query.set('afterId', String(options.afterId))
+  if (options.includeTotalCount !== undefined) query.set('includeTotalCount', String(options.includeTotalCount))
 
   return authenticatedFetch(`${base}/api/devices/${id}/logs?${query.toString()}`)
+}
+
+export async function deleteDeviceLogs(id: number, beforeUtc?: string): Promise<DeviceLogsDeleteResponse> {
+  const query = new URLSearchParams()
+  if (beforeUtc) query.set('beforeUtc', beforeUtc)
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+
+  return authenticatedFetch(`${base}/api/devices/${id}/logs${suffix}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function registerDevice(id: number, data: RegisterDeviceData): Promise<DeviceRegistrationResponse> {

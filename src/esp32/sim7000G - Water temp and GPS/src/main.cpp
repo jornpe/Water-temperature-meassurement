@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoHttpClient.h>
 #include <ArduinoJson.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include <TinyGsmClient.h>
 #include <WiFi.h>
@@ -16,11 +17,15 @@ constexpr int MODEM_DTR_PIN = 25;
 constexpr int BATTERY_ADC_PIN = 35;
 
 constexpr uint32_t MODEM_BAUD_RATE = 115200;
+constexpr uint8_t SIM7000_NETWORK_MODE_LTE_ONLY = 38;
+constexpr uint8_t SIM7000_PREFERRED_MODE_CAT_M = 1;
 constexpr uint32_t DEFAULT_REPORT_INTERVAL_SECONDS = 30;
 constexpr uint32_t DISCOVERY_INTERVAL_MS = 30000;
-constexpr size_t MAX_PENDING_LOG_ENTRIES = 120;
 constexpr size_t MAX_LOGS_PER_UPDATE = 25;
 constexpr size_t MAX_LOG_MESSAGE_LENGTH = 200;
+constexpr uint32_t FIRST_PERSISTENT_LOG_SEQUENCE_NUMBER = 1000000000UL;
+constexpr uint32_t LOG_SEQUENCE_RESERVATION_SIZE = 1024;
+constexpr char LOG_QUEUE_DIRECTORY[] = "/logqueue";
 
 struct WifiSettings
 {
@@ -72,11 +77,11 @@ RuntimeConfig config = {
         15000,
     },
     {
-        false,
+        true,
+        "internet",
         "",
         "",
-        "",
-        "",
+        "5174",
         120000,
     },
     {
@@ -122,6 +127,7 @@ uint32_t appliedConfigurationVersion = 0;
 
 bool modemReady = false;
 bool gpsReady = false;
+bool simUnlockAttempted = false;
 
 uint32_t lastNetworkAttemptMs = 0;
 uint32_t lastGpsInitAttemptMs = 0;
@@ -138,10 +144,15 @@ struct PendingDeviceLogEntry
     uint32_t deviceUptimeMs = 0;
 };
 
-PendingDeviceLogEntry pendingLogEntries[MAX_PENDING_LOG_ENTRIES];
-size_t pendingLogEntryCount = 0;
-uint32_t nextPendingLogSequenceNumber = 1;
-uint32_t droppedPendingLogCount = 0;
+PendingDeviceLogEntry pendingUploadLogEntries[MAX_LOGS_PER_UPDATE];
+size_t pendingUploadLogEntryCount = 0;
+String pendingUploadSegmentPath;
+uint32_t pendingUploadLastSequenceNumber = 0;
+String activeLogSegmentPath;
+size_t activeLogSegmentEntryCount = 0;
+uint32_t nextPendingLogSequenceNumber = FIRST_PERSISTENT_LOG_SEQUENCE_NUMBER;
+uint32_t reservedLogSequenceUpperBound = FIRST_PERSISTENT_LOG_SEQUENCE_NUMBER;
+bool logQueueReady = false;
 
 struct GpsFix
 {
@@ -297,54 +308,170 @@ String truncateLogMessage(const String& message)
     return message.substring(0, MAX_LOG_MESSAGE_LENGTH - 3) + "...";
 }
 
-void removeOldestPendingLogEntry()
+uint32_t getLogSegmentFirstSequenceNumber(const String& path)
 {
-    if (pendingLogEntryCount == 0)
+    if (!path.endsWith(".jsonl"))
     {
-        return;
+        return 0;
     }
 
-    for (size_t index = 1; index < pendingLogEntryCount; ++index)
+    const int slashIndex = path.lastIndexOf('/');
+    const int extensionIndex = path.lastIndexOf(".jsonl");
+
+    if (extensionIndex <= slashIndex + 1)
     {
-        pendingLogEntries[index - 1] = pendingLogEntries[index];
+        return 0;
     }
 
-    pendingLogEntryCount -= 1;
+    const String sequenceText = path.substring(slashIndex + 1, extensionIndex);
+
+    for (size_t index = 0; index < sequenceText.length(); ++index)
+    {
+        if (!isDigit(sequenceText[index]))
+        {
+            return 0;
+        }
+    }
+
+    return static_cast<uint32_t>(strtoul(sequenceText.c_str(), nullptr, 10));
 }
 
-void appendPendingLogEntryInternal(const String& level, const String& message, const uint32_t deviceUptimeMs)
+uint32_t findHighestQueuedLogSequenceNumber()
 {
-    if (pendingLogEntryCount >= MAX_PENDING_LOG_ENTRIES)
+    uint32_t highestSequenceNumber = 0;
+    File directory = LittleFS.open(LOG_QUEUE_DIRECTORY);
+
+    if (!directory || !directory.isDirectory())
     {
-        return;
+        return highestSequenceNumber;
     }
 
-    PendingDeviceLogEntry& entry = pendingLogEntries[pendingLogEntryCount++];
-    entry.sequenceNumber = nextPendingLogSequenceNumber++;
-    entry.level = level;
-    entry.message = truncateLogMessage(message);
-    entry.deviceUptimeMs = deviceUptimeMs;
+    File file = directory.openNextFile();
+
+    while (file)
+    {
+        if (!file.isDirectory())
+        {
+            const uint32_t firstSequenceNumber = getLogSegmentFirstSequenceNumber(String(file.path()));
+
+            if (firstSequenceNumber > 0)
+            {
+                const uint32_t estimatedLastSequenceNumber =
+                    firstSequenceNumber <= UINT32_MAX - MAX_LOGS_PER_UPDATE
+                    ? firstSequenceNumber + MAX_LOGS_PER_UPDATE
+                    : UINT32_MAX;
+                highestSequenceNumber = max(highestSequenceNumber, estimatedLastSequenceNumber);
+            }
+        }
+
+        file = directory.openNextFile();
+    }
+
+    return highestSequenceNumber;
 }
 
-void appendPendingOverflowWarningIfNeeded(const uint32_t deviceUptimeMs)
+bool reserveLogSequenceRange(const uint32_t firstSequenceNumber)
 {
-    if (droppedPendingLogCount == 0)
+    if (!preferences.begin("logqueue", false))
     {
-        return;
+        Serial.println("Could not open log queue Preferences.");
+        return false;
     }
 
-    while (pendingLogEntryCount >= MAX_PENDING_LOG_ENTRIES)
+    const uint32_t upperBound = firstSequenceNumber <= UINT32_MAX - LOG_SEQUENCE_RESERVATION_SIZE
+        ? firstSequenceNumber + LOG_SEQUENCE_RESERVATION_SIZE
+        : UINT32_MAX;
+    const bool saved = preferences.putUInt("seqUpper", upperBound) > 0;
+    preferences.end();
+
+    if (!saved)
     {
-        removeOldestPendingLogEntry();
+        Serial.println("Could not reserve persistent device log sequence numbers.");
+        return false;
     }
 
-    const uint32_t droppedCount = droppedPendingLogCount;
-    droppedPendingLogCount = 0;
+    nextPendingLogSequenceNumber = firstSequenceNumber;
+    reservedLogSequenceUpperBound = upperBound;
+    return true;
+}
 
-    appendPendingLogEntryInternal(
-        "warning",
-        "Log buffer overflow: dropped " + String(droppedCount) + (droppedCount == 1 ? " unsent log entry." : " unsent log entries."),
-        deviceUptimeMs);
+bool initializePersistentLogQueue()
+{
+    bool fileSystemWasInitialized = false;
+
+    if (preferences.begin("logqueue", true))
+    {
+        fileSystemWasInitialized = preferences.getBool("fsInit", false);
+        preferences.end();
+    }
+
+    if (!LittleFS.begin(false))
+    {
+        if (fileSystemWasInitialized)
+        {
+            Serial.println(
+                "Could not mount the existing LittleFS log queue. It was not formatted so queued logs can be recovered.");
+            return false;
+        }
+
+        if (!LittleFS.begin(true))
+        {
+            Serial.println("Could not initialize LittleFS; device logs will only be written to Serial.");
+            return false;
+        }
+
+        if (preferences.begin("logqueue", false))
+        {
+            preferences.putBool("fsInit", true);
+            preferences.end();
+        }
+    }
+    else if (!fileSystemWasInitialized && preferences.begin("logqueue", false))
+    {
+        preferences.putBool("fsInit", true);
+        preferences.end();
+    }
+
+    if (!LittleFS.exists(LOG_QUEUE_DIRECTORY) && !LittleFS.mkdir(LOG_QUEUE_DIRECTORY))
+    {
+        Serial.println("Could not create the persistent device log queue directory.");
+        return false;
+    }
+
+    uint32_t storedUpperBound = FIRST_PERSISTENT_LOG_SEQUENCE_NUMBER;
+
+    if (preferences.begin("logqueue", true))
+    {
+        storedUpperBound = preferences.getUInt("seqUpper", FIRST_PERSISTENT_LOG_SEQUENCE_NUMBER);
+        preferences.end();
+    }
+
+    const uint32_t highestQueuedSequenceNumber = findHighestQueuedLogSequenceNumber();
+    uint32_t firstSequenceNumber = max(storedUpperBound, FIRST_PERSISTENT_LOG_SEQUENCE_NUMBER);
+
+    if (highestQueuedSequenceNumber >= firstSequenceNumber && highestQueuedSequenceNumber < UINT32_MAX)
+    {
+        firstSequenceNumber = highestQueuedSequenceNumber + 1;
+    }
+
+    logQueueReady = reserveLogSequenceRange(firstSequenceNumber);
+    return logQueueReady;
+}
+
+bool ensureLogSequenceNumberAvailable()
+{
+    if (nextPendingLogSequenceNumber < reservedLogSequenceUpperBound)
+    {
+        return true;
+    }
+
+    if (nextPendingLogSequenceNumber == UINT32_MAX)
+    {
+        Serial.println("Persistent device log sequence numbers are exhausted.");
+        return false;
+    }
+
+    return reserveLogSequenceRange(nextPendingLogSequenceNumber);
 }
 
 void appendPendingDeviceLog(const String& level, const String& message)
@@ -354,24 +481,57 @@ void appendPendingDeviceLog(const String& level, const String& message)
         return;
     }
 
-    const uint32_t now = millis();
-
-    if (pendingLogEntryCount >= MAX_PENDING_LOG_ENTRIES)
+    if (!logQueueReady || !ensureLogSequenceNumberAvailable())
     {
-        removeOldestPendingLogEntry();
-        droppedPendingLogCount += 1;
+        return;
     }
 
-    appendPendingOverflowWarningIfNeeded(now);
+    const uint32_t sequenceNumber = nextPendingLogSequenceNumber++;
 
-    if (pendingLogEntryCount >= MAX_PENDING_LOG_ENTRIES)
+    if (activeLogSegmentPath.isEmpty())
     {
-        removeOldestPendingLogEntry();
-        droppedPendingLogCount += 1;
-        appendPendingOverflowWarningIfNeeded(now);
+        activeLogSegmentPath =
+            String(LOG_QUEUE_DIRECTORY)
+            + "/"
+            + String(sequenceNumber)
+            + ".jsonl";
+        activeLogSegmentEntryCount = 0;
     }
 
-    appendPendingLogEntryInternal(level, message, now);
+    File file = LittleFS.open(activeLogSegmentPath, FILE_APPEND);
+
+    if (!file)
+    {
+        Serial.println("Could not append a device log entry to the persistent queue.");
+        activeLogSegmentPath = "";
+        activeLogSegmentEntryCount = 0;
+        return;
+    }
+
+    JsonDocument document;
+    document["sequenceNumber"] = sequenceNumber;
+    document["message"] = truncateLogMessage(message);
+    document["level"] = level;
+    document["deviceUptimeMs"] = millis();
+
+    const bool written = serializeJson(document, file) > 0 && file.println() > 0;
+    file.close();
+
+    if (!written)
+    {
+        Serial.println("A device log entry could not be fully written to the persistent queue.");
+        activeLogSegmentPath = "";
+        activeLogSegmentEntryCount = 0;
+        return;
+    }
+
+    activeLogSegmentEntryCount += 1;
+
+    if (activeLogSegmentEntryCount >= MAX_LOGS_PER_UPDATE)
+    {
+        activeLogSegmentPath = "";
+        activeLogSegmentEntryCount = 0;
+    }
 }
 
 void logInfo(const String& message)
@@ -392,12 +552,132 @@ void logError(const String& message)
     appendPendingDeviceLog("error", message);
 }
 
+String findOldestLogSegmentPath()
+{
+    String oldestPath;
+    uint32_t oldestSequenceNumber = UINT32_MAX;
+    File directory = LittleFS.open(LOG_QUEUE_DIRECTORY);
+
+    if (!directory || !directory.isDirectory())
+    {
+        return oldestPath;
+    }
+
+    File file = directory.openNextFile();
+
+    while (file)
+    {
+        if (!file.isDirectory())
+        {
+            const String path = String(file.path());
+            const uint32_t firstSequenceNumber = getLogSegmentFirstSequenceNumber(path);
+
+            if (firstSequenceNumber > 0 && firstSequenceNumber < oldestSequenceNumber)
+            {
+                oldestSequenceNumber = firstSequenceNumber;
+                oldestPath = path;
+            }
+        }
+
+        file = directory.openNextFile();
+    }
+
+    return oldestPath;
+}
+
+void loadPendingLogUploadBatch()
+{
+    pendingUploadLogEntryCount = 0;
+    pendingUploadSegmentPath = "";
+    pendingUploadLastSequenceNumber = 0;
+
+    if (!logQueueReady)
+    {
+        return;
+    }
+
+    // Close the current segment logically before sending it. Logs produced by
+    // the HTTP request are appended to a new segment and cannot be removed by
+    // the acknowledgement for this request.
+    activeLogSegmentPath = "";
+    activeLogSegmentEntryCount = 0;
+
+    const String segmentPath = findOldestLogSegmentPath();
+
+    if (segmentPath.isEmpty())
+    {
+        return;
+    }
+
+    File file = LittleFS.open(segmentPath, FILE_READ);
+
+    if (!file)
+    {
+        Serial.println("Could not read the oldest persistent device log segment.");
+        return;
+    }
+
+    while (file.available() && pendingUploadLogEntryCount < MAX_LOGS_PER_UPDATE)
+    {
+        JsonDocument document;
+        const DeserializationError error = deserializeJson(document, file);
+
+        if (error)
+        {
+            Serial.println("A persistent device log segment is corrupt and could not be uploaded.");
+            break;
+        }
+
+        PendingDeviceLogEntry& entry = pendingUploadLogEntries[pendingUploadLogEntryCount];
+        entry.sequenceNumber = document["sequenceNumber"] | 0U;
+        entry.message = document["message"] | "";
+        entry.level = document["level"] | "";
+        entry.deviceUptimeMs = document["deviceUptimeMs"] | 0U;
+
+        if (entry.sequenceNumber == 0 || entry.message.isEmpty())
+        {
+            Serial.println("A persistent device log record is invalid and could not be uploaded.");
+            break;
+        }
+
+        pendingUploadLastSequenceNumber = entry.sequenceNumber;
+        pendingUploadLogEntryCount += 1;
+    }
+
+    file.close();
+
+    if (pendingUploadLogEntryCount > 0)
+    {
+        pendingUploadSegmentPath = segmentPath;
+    }
+    else
+    {
+        const String corruptPath = segmentPath + ".corrupt";
+
+        if (LittleFS.rename(segmentPath, corruptPath))
+        {
+            Serial.println("An unreadable device log segment was preserved with a .corrupt suffix.");
+        }
+    }
+}
+
 void acknowledgePendingLogs(const uint32_t highestAcknowledgedSequenceNumber)
 {
-    while (pendingLogEntryCount > 0 && pendingLogEntries[0].sequenceNumber <= highestAcknowledgedSequenceNumber)
+    if (pendingUploadSegmentPath.isEmpty()
+        || pendingUploadLastSequenceNumber == 0
+        || highestAcknowledgedSequenceNumber < pendingUploadLastSequenceNumber)
     {
-        removeOldestPendingLogEntry();
+        return;
     }
+
+    if (!LittleFS.remove(pendingUploadSegmentPath))
+    {
+        Serial.println("The acknowledged persistent device log segment could not be removed.");
+    }
+
+    pendingUploadLogEntryCount = 0;
+    pendingUploadSegmentPath = "";
+    pendingUploadLastSequenceNumber = 0;
 }
 
 void loadPersistedDeviceState()
@@ -675,38 +955,99 @@ bool connectCellular()
         return false;
     }
 
-    if (!config.cellular.simPin.isEmpty())
+    logInfo("Modem: " + modem.getModemInfo());
+
+    const SimStatus initialSimStatus = modem.getSimStatus();
+
+    if (initialSimStatus == SIM_LOCKED)
     {
+        if (config.cellular.simPin.isEmpty())
+        {
+            logError("The SIM card requires a PIN, but no SIM PIN is configured.");
+            return false;
+        }
+
+        if (simUnlockAttempted)
+        {
+            logError("The SIM is still locked. PIN unlock will not be retried until reboot.");
+            return false;
+        }
+
+        simUnlockAttempted = true;
         logInfo("Unlocking SIM card...");
 
         if (!modem.simUnlock(config.cellular.simPin.c_str()))
         {
-            logError("SIM unlock failed.");
+            logError("SIM unlock failed. Reboot before trying another PIN to avoid blocking the SIM.");
             return false;
         }
+
+        delay(1000);
+
+        if (modem.getSimStatus() != SIM_READY)
+        {
+            logError("The SIM did not become ready after PIN unlock.");
+            return false;
+        }
+
+        logInfo("SIM card unlocked.");
+    }
+    else if (initialSimStatus != SIM_READY)
+    {
+        logError("SIM card is not inserted or not ready.");
+        return false;
+    }
+    else
+    {
+        logInfo("SIM card is ready.");
+    }
+
+    logInfo("Selecting LTE Cat-M network mode...");
+
+    if (!modem.setNetworkMode(SIM7000_NETWORK_MODE_LTE_ONLY))
+    {
+        logWarning("Could not force LTE-only mode; continuing with the modem's current mode.");
+    }
+
+    if (!modem.setPreferredMode(SIM7000_PREFERRED_MODE_CAT_M))
+    {
+        logWarning("Could not prefer LTE Cat-M; continuing with the modem's current preference.");
     }
 
     logInfo("Waiting for cellular network...");
 
     if (!modem.waitForNetwork(config.cellular.networkTimeoutMs))
     {
-        logError("Cellular network registration failed.");
+        logError(
+            "Cellular network registration failed. Signal quality: "
+            + String(modem.getSignalQuality()));
         return false;
     }
 
-    logInfo("Connecting cellular data...");
+    logInfo("Registered on operator: " + modem.getOperator());
+    logInfo("Cellular signal quality: " + String(modem.getSignalQuality()));
 
-    if (!modem.gprsConnect(
-            config.cellular.apn.c_str(),
-            config.cellular.username.c_str(),
-            config.cellular.password.c_str()))
+    if (!modem.isGprsConnected())
     {
-        logError("Cellular data connection failed.");
-        return false;
+        logInfo("Connecting cellular data using APN: " + config.cellular.apn);
+
+        const bool connected = config.cellular.username.isEmpty()
+                && config.cellular.password.isEmpty()
+            ? modem.gprsConnect(config.cellular.apn.c_str())
+            : modem.gprsConnect(
+                config.cellular.apn.c_str(),
+                config.cellular.username.c_str(),
+                config.cellular.password.c_str());
+
+        if (!connected || !modem.isGprsConnected())
+        {
+            logError("Cellular data connection failed.");
+            return false;
+        }
     }
 
     logInfo("Cellular data connected.");
-    logInfo("Cellular IP address: " + modem.localIP());
+    logInfo("Cellular IP address: " + modem.getLocalIP());
 
     activeTransport = NetworkTransport::Cellular;
     return true;
@@ -729,12 +1070,12 @@ bool connectNetwork()
 {
     lastNetworkAttemptMs = millis();
 
-    if (connectWifi())
+    if (config.cellular.enabled && connectCellular())
     {
         return true;
     }
 
-    if (config.cellular.enabled && connectCellular())
+    if (connectWifi())
     {
         return true;
     }
@@ -793,6 +1134,8 @@ String buildDiscoveryPayload()
 
 String buildUpdatePayload(const uint32_t now)
 {
+    loadPendingLogUploadBatch();
+
     JsonDocument document;
     document["firmwareVersion"] = config.tracker.firmwareVersion;
     document["temperature"] = buildDummyTemperatureCelsius(now);
@@ -839,13 +1182,13 @@ String buildUpdatePayload(const uint32_t now)
         appendCellularDiagnostics(network["cellular"].to<JsonObject>());
     }
 
-    if (pendingLogEntryCount > 0)
+    if (pendingUploadLogEntryCount > 0)
     {
         JsonArray logs = document["logs"].to<JsonArray>();
 
-        for (size_t index = 0; index < pendingLogEntryCount && index < MAX_LOGS_PER_UPDATE; ++index)
+        for (size_t index = 0; index < pendingUploadLogEntryCount; ++index)
         {
-            const PendingDeviceLogEntry& entry = pendingLogEntries[index];
+            const PendingDeviceLogEntry& entry = pendingUploadLogEntries[index];
             JsonObject log = logs.add<JsonObject>();
             log["sequenceNumber"] = entry.sequenceNumber;
             log["message"] = entry.message;
@@ -954,9 +1297,34 @@ HttpResponse sendJsonPost(const String& path, const String& payload, const Strin
 
     if (activeTransport == NetworkTransport::Cellular)
     {
+        // Discard any stale socket state from the previous request.
+        cellularClient.stop();
+
         HttpClient client(cellularClient, config.backend.host.c_str(), config.backend.port);
+        client.setHttpResponseTimeout(config.backend.requestTimeoutMs);
+
+        logInfo(
+            "POST http://"
+            + config.backend.host
+            + ":"
+            + String(config.backend.port)
+            + path);
+
         client.beginRequest();
-        client.post(path.c_str());
+
+        const int requestResult = client.post(path.c_str());
+
+        if (requestResult != 0)
+        {
+            logError(
+                "Cellular HTTP connection/request initialization failed. Error: "
+                + String(requestResult));
+
+            client.stop();
+            cellularClient.stop();
+            return response;
+        }
+
         client.sendHeader("Content-Type", "application/json");
         client.sendHeader("Content-Length", payload.length());
         client.sendHeader("Connection", "close");
@@ -967,13 +1335,42 @@ HttpResponse sendJsonPost(const String& path, const String& payload, const Strin
         }
 
         client.beginBody();
-        client.print(payload);
+
+        const size_t bytesWritten = client.print(payload);
         client.endRequest();
 
+        if (bytesWritten != payload.length())
+        {
+            logError(
+                "Cellular HTTP body write incomplete. Wrote "
+                + String(bytesWritten)
+                + " of "
+                + String(payload.length())
+                + " bytes.");
+
+            client.stop();
+            cellularClient.stop();
+            return response;
+        }
+
         response.statusCode = client.responseStatusCode();
+
+        if (response.statusCode < 0)
+        {
+            logError(
+                "No valid cellular HTTP response received. Error: "
+                + String(response.statusCode));
+
+            client.stop();
+            cellularClient.stop();
+            return response;
+        }
+
         response.body = client.responseBody();
         response.transportOk = true;
+
         client.stop();
+        cellularClient.stop();
         return response;
     }
 
@@ -1186,6 +1583,7 @@ void setup()
     delay(1000);
 
     Serial.println();
+    initializePersistentLogQueue();
     logInfo("LILYGO T-SIM7000G Device Onboarding Client");
     logInfo("==========================================");
 

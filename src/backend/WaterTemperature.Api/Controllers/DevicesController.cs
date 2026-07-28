@@ -124,16 +124,51 @@ public class DevicesController(
     }
 
     [HttpGet("{id:int}/logs")]
-    public async Task<ActionResult<DeviceLogsResponse>> GetDeviceLogs(int id, [FromQuery] int page = 1, [FromQuery] int pageSize = DefaultLogsPageSize)
+    public async Task<ActionResult<DeviceLogsResponse>> GetDeviceLogs(
+        int id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DefaultLogsPageSize,
+        [FromQuery] string? search = null,
+        [FromQuery] string? level = null,
+        [FromQuery] DateTime? fromUtc = null,
+        [FromQuery] DateTime? toUtc = null,
+        [FromQuery] int? beforeId = null,
+        [FromQuery] int? afterId = null,
+        [FromQuery] bool includeTotalCount = true,
+        CancellationToken cancellationToken = default)
     {
         var normalizedPage = page < 1 ? 1 : page;
         var normalizedPageSize = Math.Clamp(pageSize, 1, MaxLogsPageSize);
+
+        if (beforeId.HasValue && afterId.HasValue)
+        {
+            return BadRequest(new MessageResponse("Only one log cursor can be supplied at a time"));
+        }
+
+        var normalizedSearch = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        if (normalizedSearch?.Length > 200)
+        {
+            return BadRequest(new MessageResponse("Log search text must be 200 characters or fewer"));
+        }
+
+        var normalizedLevel = string.IsNullOrWhiteSpace(level) ? null : level.Trim().ToLowerInvariant();
+        if (normalizedLevel?.Length > 32)
+        {
+            return BadRequest(new MessageResponse("Log level must be 32 characters or fewer"));
+        }
+
+        DateTime? normalizedFromUtc = fromUtc.HasValue ? NormalizeUtc(fromUtc.Value) : null;
+        DateTime? normalizedToUtc = toUtc.HasValue ? NormalizeUtc(toUtc.Value) : null;
+        if (normalizedFromUtc > normalizedToUtc)
+        {
+            return BadRequest(new MessageResponse("The log start time must be earlier than the end time"));
+        }
 
         var device = await dbContext.Devices
             .AsNoTracking()
             .Where(item => item.Id == id)
             .Select(item => new { item.Id, item.DeviceIdentifier })
-            .SingleOrDefaultAsync();
+            .SingleOrDefaultAsync(cancellationToken);
 
         if (device is null)
         {
@@ -144,12 +179,63 @@ public class DevicesController(
             .AsNoTracking()
             .Where(entry => entry.DeviceId == id);
 
-        var totalCount = await logsQuery.CountAsync();
-        var items = await logsQuery
-            .OrderByDescending(entry => entry.SequenceNumber)
-            .ThenByDescending(entry => entry.ReceivedAtUtc)
-            .Skip((normalizedPage - 1) * normalizedPageSize)
-            .Take(normalizedPageSize)
+        if (normalizedSearch is not null)
+        {
+            if (dbContext.Database.IsNpgsql())
+            {
+                var escapedSearch = normalizedSearch
+                    .Replace(@"\", @"\\", StringComparison.Ordinal)
+                    .Replace("%", @"\%", StringComparison.Ordinal)
+                    .Replace("_", @"\_", StringComparison.Ordinal);
+                var searchPattern = $"%{escapedSearch}%";
+                logsQuery = logsQuery.Where(entry => EF.Functions.ILike(entry.Message, searchPattern, @"\"));
+            }
+            else
+            {
+                var lowercaseSearch = normalizedSearch.ToLowerInvariant();
+                logsQuery = logsQuery.Where(entry => entry.Message.ToLower().Contains(lowercaseSearch));
+            }
+        }
+
+        if (normalizedLevel is not null)
+        {
+            logsQuery = logsQuery.Where(entry => entry.Level == normalizedLevel);
+        }
+
+        if (normalizedFromUtc.HasValue)
+        {
+            logsQuery = logsQuery.Where(entry => entry.ReceivedAtUtc >= normalizedFromUtc.Value);
+        }
+
+        if (normalizedToUtc.HasValue)
+        {
+            logsQuery = logsQuery.Where(entry => entry.ReceivedAtUtc <= normalizedToUtc.Value);
+        }
+
+        var totalCount = includeTotalCount
+            ? await logsQuery.LongCountAsync(cancellationToken)
+            : (long?)null;
+
+        if (beforeId.HasValue)
+        {
+            logsQuery = logsQuery.Where(entry => entry.Id < beforeId.Value);
+        }
+        else if (afterId.HasValue)
+        {
+            logsQuery = logsQuery.Where(entry => entry.Id > afterId.Value);
+        }
+
+        IQueryable<DeviceLogEntry> orderedQuery = afterId.HasValue
+            ? logsQuery.OrderBy(entry => entry.Id)
+            : logsQuery.OrderByDescending(entry => entry.Id);
+
+        if (!beforeId.HasValue && !afterId.HasValue && normalizedPage > 1)
+        {
+            orderedQuery = orderedQuery.Skip((normalizedPage - 1) * normalizedPageSize);
+        }
+
+        var items = await orderedQuery
+            .Take(normalizedPageSize + 1)
             .Select(entry => new DeviceLogEntryResponse(
                 entry.Id,
                 entry.SequenceNumber,
@@ -158,7 +244,18 @@ public class DevicesController(
                 entry.DeviceTimestampUtc,
                 entry.DeviceUptimeMs,
                 entry.ReceivedAtUtc))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
+
+        var hasMore = items.Count > normalizedPageSize;
+        if (hasMore)
+        {
+            items.RemoveAt(items.Count - 1);
+        }
+
+        if (afterId.HasValue)
+        {
+            items.Reverse();
+        }
 
         return Ok(new DeviceLogsResponse(
             device.Id,
@@ -166,7 +263,54 @@ public class DevicesController(
             normalizedPage,
             normalizedPageSize,
             totalCount,
+            hasMore,
+            items.Count > 0 ? items[^1].Id : null,
             items));
+    }
+
+    [HttpDelete("{id:int}/logs")]
+    public async Task<ActionResult<DeviceLogsDeleteResponse>> DeleteDeviceLogs(
+        int id,
+        [FromQuery] DateTime? beforeUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var device = await dbContext.Devices
+            .AsNoTracking()
+            .Where(item => item.Id == id)
+            .Select(item => new { item.Id, item.DeviceIdentifier })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (device is null)
+        {
+            return NotFound();
+        }
+
+        DateTime? normalizedBeforeUtc = beforeUtc.HasValue ? NormalizeUtc(beforeUtc.Value) : null;
+        var logsQuery = dbContext.DeviceLogEntries.Where(entry => entry.DeviceId == id);
+
+        if (normalizedBeforeUtc.HasValue)
+        {
+            logsQuery = logsQuery.Where(entry => entry.ReceivedAtUtc < normalizedBeforeUtc.Value);
+        }
+
+        int deletedCount;
+        if (dbContext.Database.IsRelational())
+        {
+            deletedCount = await logsQuery.ExecuteDeleteAsync(cancellationToken);
+        }
+        else
+        {
+            var entries = await logsQuery.ToListAsync(cancellationToken);
+            deletedCount = entries.Count;
+            dbContext.DeviceLogEntries.RemoveRange(entries);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return Ok(new DeviceLogsDeleteResponse(
+            device.Id,
+            device.DeviceIdentifier,
+            normalizedBeforeUtc,
+            deletedCount));
     }
 
     [HttpPost("{id:int}/register")]
@@ -430,5 +574,15 @@ public class DevicesController(
 
         validationMessage = null;
         return true;
+    }
+
+    private static DateTime NormalizeUtc(DateTime value)
+    {
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+        };
     }
 }

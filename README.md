@@ -68,11 +68,17 @@ This repository is a small monorepo with a .NET backend API and a React + Vite f
 	- The device reports its applied configuration version and applied report interval in each authenticated update.
 	- The frontend shows whether configuration is still pending on the device.
 - Device updates remain a single authenticated write call at `POST /api/devices/{deviceId}/updates`, now carrying:
-	- telemetry
-	- runtime configuration
-	- a batch of unsent device log lines
-- Device logs are stored server-side with an idempotency key of `(DeviceId, SequenceNumber)` so retried uploads do not create duplicates.
-- The frontend reads persisted logs through `GET /api/devices/{id}/logs` and refreshes them automatically while the details page is open.
+  - telemetry
+  - runtime configuration
+  - a batch of unsent device log lines
+- The ESP32 stores unsent logs in segmented LittleFS files. Segments survive restarts and are removed only after the backend acknowledges their highest sequence number.
+- ESP32 log sequence numbers are reserved persistently in blocks and start above the legacy in-memory range, so a restart cannot reuse a sequence number that is already stored by the backend.
+- Device logs are stored indefinitely server-side with an idempotency key of `(DeviceId, SequenceNumber)` so retried uploads do not create duplicates.
+- `GET /api/devices/{id}/logs` supports newest-first cursor reads plus server-side `search`, `level`, `fromUtc`, and `toUtc` filters. The frontend polls with `afterId` for live lines and uses `beforeId` to load older matching history.
+- `DELETE /api/devices/{id}/logs` removes every log for a device. Supplying `beforeUtc` removes only entries older than that cutoff.
+- The log tab exposes full-history search, live updates, older-history loading, delete-all, and retention controls for keeping the last hour, 24 hours, week, or a custom number of days.
+
+The backend has no configured log row limit and PostgreSQL can retain millions of entries. The ESP32 queue is no longer capped at 120 RAM entries, but it is still bounded by the board's physical LittleFS flash capacity. If flash cannot accept another record, the firmware reports the write failure on Serial and does not silently discard an older queued record.
 
 ## Migration Workflow
 

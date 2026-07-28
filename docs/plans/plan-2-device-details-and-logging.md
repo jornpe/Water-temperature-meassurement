@@ -159,20 +159,21 @@ Recommended direction:
 
 This gives safe retry behavior and avoids duplicate log rows when the same update is retried.
 
-### 5. Keep full server log history, but bound the device-side unsent buffer
+### 5. Keep full server log history and persist the device-side unsent queue
 
 The frontend requirement is to show the full log for a device. The backend can satisfy that with append-only persistence and paginated reads.
 
-The firmware, however, cannot keep an unbounded unsent queue.
+The original RAM ring-buffer design was superseded after testing exposed restart sequence reuse and offline overflow as loss paths.
 
-Recommended direction:
+Implemented direction:
 
-- Backend stores log entries indefinitely in this stage.
-- Frontend reads logs through paginated API calls.
-- Firmware keeps a bounded ring buffer of unsent lines.
-- When the firmware buffer overflows, drop the oldest unsent lines and add a synthetic warning line so the loss is visible in the persisted log stream.
+- Backend stores log entries indefinitely and serves indexed cursor pages with server-side filters.
+- Frontend reads the newest page, polls forward from the latest database ID, and requests older cursor pages on demand.
+- Firmware stores unsent entries in segmented LittleFS files instead of a fixed-size RAM ring.
+- Each segment is removed only after the matching backend acknowledgement.
+- Sequence ranges are reserved in Preferences so rebooting cannot reuse an already-stored log sequence.
 
-This is the smallest reliable design that aligns with the existing single-file firmware and limited device memory.
+The persistent queue is limited only by the board's physical LittleFS capacity. A full or unavailable filesystem is reported on Serial; the firmware does not evict an older unacknowledged entry to make room.
 
 ## Repository Areas Likely Affected
 
@@ -504,8 +505,8 @@ Why this order is safest:
 
 - Log payloads can grow too large for a single update request.
   - Mitigation: cap batch size by number of lines and total serialized bytes; rely on sequence-based acknowledgments.
-- Device-side log buffers can overflow during long offline periods.
-  - Mitigation: bounded ring buffer plus synthetic overflow warning entry.
+- Device-side flash can fill during very long offline periods.
+  - Mitigation: use a persistent segmented queue, never evict unacknowledged segments, and report append failures on Serial.
 - Polling can create unnecessary load if intervals are too aggressive.
   - Mitigation: page-local polling, no overlap, and visibility-aware throttling.
 - Configuration sync state can become misleading if name and place changes are treated like device runtime config.

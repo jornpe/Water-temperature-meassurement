@@ -139,9 +139,98 @@ public class DevicesControllerTests : IDisposable
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<DeviceLogsResponse>(okResult.Value);
 
-        Assert.Equal(3, response.TotalCount);
+        Assert.Equal(3L, response.TotalCount);
         Assert.Equal(2, response.Items.Count);
         Assert.Equal([3L, 2L], response.Items.Select(item => item.SequenceNumber).ToArray());
+        Assert.True(response.HasMore);
+        Assert.Equal(response.Items[^1].Id, response.NextBeforeId);
+    }
+
+    [Fact]
+    public async Task GetDeviceLogs_SearchesAndFiltersTheFullStoredHistory()
+    {
+        var device = new Device { DeviceIdentifier = "device-1", Status = DeviceRegistrationStatus.Registered };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var now = DateTime.UtcNow;
+        _dbContext.DeviceLogEntries.AddRange(
+            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 1, Level = "info", Message = "startup complete", ReceivedAtUtc = now.AddDays(-2) },
+            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 2, Level = "warning", Message = "Cellular signal is weak", ReceivedAtUtc = now.AddHours(-2) },
+            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 3, Level = "warning", Message = "unrelated warning", ReceivedAtUtc = now });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetDeviceLogs(
+            device.Id,
+            pageSize: 1,
+            search: "SIGNAL",
+            level: "WARNING",
+            fromUtc: now.AddHours(-3),
+            toUtc: now.AddHours(-1));
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<DeviceLogsResponse>(okResult.Value);
+
+        Assert.Equal(1L, response.TotalCount);
+        var entry = Assert.Single(response.Items);
+        Assert.Equal(2, entry.SequenceNumber);
+        Assert.False(response.HasMore);
+    }
+
+    [Fact]
+    public async Task GetDeviceLogs_AfterCursorReturnsEveryNewEntryOldestBatchFirst()
+    {
+        var device = new Device { DeviceIdentifier = "device-1", Status = DeviceRegistrationStatus.Registered };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var entries = Enumerable.Range(1, 5)
+            .Select(sequence => new DeviceLogEntry
+            {
+                DeviceId = device.Id,
+                SequenceNumber = sequence,
+                Message = $"line {sequence}",
+                ReceivedAtUtc = DateTime.UtcNow,
+            })
+            .ToArray();
+        _dbContext.DeviceLogEntries.AddRange(entries);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetDeviceLogs(
+            device.Id,
+            pageSize: 2,
+            afterId: entries[0].Id,
+            includeTotalCount: false);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<DeviceLogsResponse>(okResult.Value);
+
+        Assert.Null(response.TotalCount);
+        Assert.True(response.HasMore);
+        Assert.Equal([3L, 2L], response.Items.Select(item => item.SequenceNumber).ToArray());
+    }
+
+    [Fact]
+    public async Task DeleteDeviceLogs_WithCutoffKeepsRecentEntries()
+    {
+        var device = new Device { DeviceIdentifier = "device-1", Status = DeviceRegistrationStatus.Registered };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var cutoff = DateTime.UtcNow.AddHours(-24);
+        _dbContext.DeviceLogEntries.AddRange(
+            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 1, Message = "old", ReceivedAtUtc = cutoff.AddMinutes(-1) },
+            new DeviceLogEntry { DeviceId = device.Id, SequenceNumber = 2, Message = "recent", ReceivedAtUtc = cutoff.AddMinutes(1) });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.DeleteDeviceLogs(device.Id, cutoff);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<DeviceLogsDeleteResponse>(okResult.Value);
+
+        Assert.Equal(1, response.DeletedCount);
+        var remaining = await _dbContext.DeviceLogEntries.SingleAsync();
+        Assert.Equal(2, remaining.SequenceNumber);
     }
 
     [Fact]

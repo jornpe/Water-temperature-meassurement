@@ -29,6 +29,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   clearDeviceTelemetry,
   deleteDevice,
+  deleteDeviceLogs,
   getDevice,
   getDeviceLogs,
   regenerateDeviceKey,
@@ -39,11 +40,12 @@ import {
 } from '../api'
 
 type DeviceTab = 0 | 1 | 2
-type PendingAction = 'regenerate' | 'clear-temperature' | 'clear-position' | 'delete' | null
+type PendingAction = 'regenerate' | 'clear-temperature' | 'clear-position' | 'delete-all-logs' | 'delete' | null
 
 const POLL_INTERVAL_MS = 5000
 const HIDDEN_POLL_INTERVAL_MS = 20000
 const LOG_PAGE_SIZE = 100
+const LOG_SEARCH_DEBOUNCE_MS = 350
 const HOME_ASSISTANT_DEVICE_NAME_REGEX = /^[\p{L}\p{N} _\-().]+$/u
 
 function formatDate(value?: string | null) {
@@ -64,6 +66,10 @@ function formatValue(value?: string | number | boolean | null, suffix = '') {
 
 function formatBatteryState(value?: number | null) {
   return value === 0 ? 'Not charging' : value === 1 ? 'Charging' : value === 2 ? 'Full' : 'Unknown'
+}
+
+function toUtcIso(value: string) {
+  return value ? new Date(value).toISOString() : undefined
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -113,38 +119,34 @@ export default function DeviceDetails() {
   const [logFromTime, setLogFromTime] = useState('')
   const [logToTime, setLogToTime] = useState('')
   const [logTextFilter, setLogTextFilter] = useState('')
+  const [debouncedLogTextFilter, setDebouncedLogTextFilter] = useState('')
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [olderLogsLoading, setOlderLogsLoading] = useState(false)
+  const [logReloadVersion, setLogReloadVersion] = useState(0)
+  const [retentionDialogOpen, setRetentionDialogOpen] = useState(false)
+  const [retentionPresetHours, setRetentionPresetHours] = useState('24')
+  const [customRetentionDays, setCustomRetentionDays] = useState('30')
 
-  const logEntries = logs ? [...logs.items].reverse() : []
+  const logEntries = logs ? [...logs.items].sort((left, right) => left.id - right.id) : []
 
   const availableLogSeverities = Array.from(
-    new Set(logEntries.map((entry) => entry.level).filter((level): level is string => Boolean(level))),
+    new Set([
+      'info',
+      'warning',
+      'error',
+      ...logEntries.map((entry) => entry.level).filter((level): level is string => Boolean(level)),
+    ]),
   ).sort()
 
-  const fromTimeMs = logFromTime ? new Date(logFromTime).getTime() : null
-  const toTimeMs = logToTime ? new Date(logToTime).getTime() : null
-  const normalizedLogTextFilter = logTextFilter.trim().toLowerCase()
+  const filteredLogEntries = logEntries
 
-  const filteredLogEntries = logEntries.filter((entry) => {
-    if (logSeverityFilter !== 'all' && (entry.level ?? '').toLowerCase() !== logSeverityFilter.toLowerCase()) {
-      return false
-    }
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedLogTextFilter(logTextFilter.trim())
+    }, LOG_SEARCH_DEBOUNCE_MS)
 
-    const entryTimeMs = new Date(entry.receivedAtUtc).getTime()
-
-    if (fromTimeMs !== null && entryTimeMs < fromTimeMs) {
-      return false
-    }
-
-    if (toTimeMs !== null && entryTimeMs > toTimeMs) {
-      return false
-    }
-
-    if (normalizedLogTextFilter && !entry.message.toLowerCase().includes(normalizedLogTextFilter)) {
-      return false
-    }
-
-    return true
-  })
+    return () => window.clearTimeout(timeoutId)
+  }, [logTextFilter])
 
   useEffect(() => {
     if (!device) {
@@ -207,36 +209,26 @@ export default function DeviceDetails() {
       }
 
       try {
-        const [detailResult, logsResult] = await Promise.allSettled([
-          getDevice(deviceId),
-          getDeviceLogs(deviceId, 1, LOG_PAGE_SIZE),
-        ])
+        const detailResult = await getDevice(deviceId)
 
         if (cancelled) {
           return
         }
 
-        if (detailResult.status === 'fulfilled') {
-          setDevice(detailResult.value)
-          setPageError(null)
-        } else {
-          const message = detailResult.reason?.message || 'Failed to load device details'
-          setPageError(message)
-        }
-
-        if (logsResult.status === 'fulfilled') {
-          setLogs(logsResult.value)
-          setLogsError(null)
-        } else {
-          setLogsError(logsResult.reason?.message || 'Failed to load device logs')
+        setDevice(detailResult)
+        setPageError(null)
+      } catch (err: any) {
+        if (!cancelled) {
+          setPageError(err.message || 'Failed to load device details')
         }
       } finally {
+        inFlightRef.current = false
+
         if (!cancelled) {
           if (isInitialLoad) {
             setLoading(false)
           }
 
-          inFlightRef.current = false
           schedule(getDelay())
         }
       }
@@ -264,6 +256,166 @@ export default function DeviceDetails() {
   }, [deviceId])
 
   useEffect(() => {
+    if (!Number.isInteger(deviceId) || deviceId <= 0) {
+      return
+    }
+
+    let cancelled = false
+    let timeoutId: number | undefined
+    let latestSeenId = 0
+    let logsInitialized = false
+
+    const query = {
+      pageSize: LOG_PAGE_SIZE,
+      search: debouncedLogTextFilter || undefined,
+      level: logSeverityFilter === 'all' ? undefined : logSeverityFilter,
+      fromUtc: toUtcIso(logFromTime),
+      toUtc: toUtcIso(logToTime),
+    }
+
+    const getDelay = () => (document.visibilityState === 'visible' ? POLL_INTERVAL_MS : HIDDEN_POLL_INTERVAL_MS)
+
+    const schedule = (delay: number) => {
+      timeoutId = window.setTimeout(() => {
+        if (logsInitialized) {
+          void pollForNewLogs()
+        } else {
+          void loadInitialLogs()
+        }
+      }, delay)
+    }
+
+    const mergeNewLogs = (newItems: DeviceLogsResponse['items']) => {
+      if (newItems.length === 0) {
+        return
+      }
+
+      setLogs((current) => {
+        if (!current) {
+          return current
+        }
+
+        const entriesById = new Map(current.items.map((entry) => [entry.id, entry]))
+        let addedCount = 0
+
+        for (const entry of newItems) {
+          if (!entriesById.has(entry.id)) {
+            addedCount += 1
+          }
+          entriesById.set(entry.id, entry)
+        }
+
+        return {
+          ...current,
+          totalCount: current.totalCount == null ? current.totalCount : current.totalCount + addedCount,
+          items: Array.from(entriesById.values()).sort((left, right) => right.id - left.id),
+        }
+      })
+    }
+
+    const pollForNewLogs = async () => {
+      if (cancelled) {
+        return
+      }
+
+      let caughtUp = true
+
+      try {
+        let hasMore = false
+        let batchesProcessed = 0
+
+        do {
+          const response = await getDeviceLogs(deviceId, {
+            ...query,
+            afterId: latestSeenId,
+            includeTotalCount: false,
+          })
+
+          if (cancelled) {
+            return
+          }
+
+          if (response.items.length > 0) {
+            latestSeenId = Math.max(latestSeenId, ...response.items.map((entry) => entry.id))
+            mergeNewLogs(response.items)
+          }
+
+          hasMore = response.hasMore && response.items.length > 0
+          batchesProcessed += 1
+        } while (hasMore && batchesProcessed < 10)
+
+        caughtUp = !hasMore
+        setLogsError(null)
+      } catch (err: any) {
+        if (!cancelled) {
+          setLogsError(err.message || 'Failed to load new device logs')
+        }
+      } finally {
+        if (!cancelled) {
+          schedule(caughtUp ? getDelay() : 0)
+        }
+      }
+    }
+
+    const loadInitialLogs = async () => {
+      setLogsLoading(true)
+      setLogs(null)
+
+      try {
+        const response = await getDeviceLogs(deviceId, {
+          ...query,
+          includeTotalCount: true,
+        })
+
+        if (cancelled) {
+          return
+        }
+
+        latestSeenId = response.items.reduce((highest, entry) => Math.max(highest, entry.id), 0)
+        logsInitialized = true
+        setLogs(response)
+        setLogsError(null)
+      } catch (err: any) {
+        if (!cancelled) {
+          setLogsError(err.message || 'Failed to load device logs')
+        }
+      } finally {
+        if (!cancelled) {
+          setLogsLoading(false)
+          schedule(getDelay())
+        }
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId)
+      }
+
+      schedule(document.visibilityState === 'visible' ? 0 : HIDDEN_POLL_INTERVAL_MS)
+    }
+
+    void loadInitialLogs()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [
+    debouncedLogTextFilter,
+    deviceId,
+    logFromTime,
+    logReloadVersion,
+    logSeverityFilter,
+    logToTime,
+  ])
+
+  useEffect(() => {
     if (tab !== 2 || !isFollowingLogs) {
       return
     }
@@ -279,15 +431,9 @@ export default function DeviceDetails() {
   }, [isFollowingLogs, logEntries, tab])
 
   const refreshPage = async () => {
-    const [detail, deviceLogs] = await Promise.all([
-      getDevice(deviceId),
-      getDeviceLogs(deviceId, 1, LOG_PAGE_SIZE),
-    ])
-
+    const detail = await getDevice(deviceId)
     setDevice(detail)
-    setLogs(deviceLogs)
     setPageError(null)
-    setLogsError(null)
   }
 
   const handleLogsScroll = () => {
@@ -310,6 +456,49 @@ export default function DeviceDetails() {
     setIsFollowingLogs(true)
   }
 
+  const loadOlderLogs = async () => {
+    if (!logs || !logs.hasMore || olderLogsLoading || logs.items.length === 0) {
+      return
+    }
+
+    setOlderLogsLoading(true)
+    setLogsError(null)
+
+    try {
+      const response = await getDeviceLogs(deviceId, {
+        pageSize: LOG_PAGE_SIZE,
+        search: debouncedLogTextFilter || undefined,
+        level: logSeverityFilter === 'all' ? undefined : logSeverityFilter,
+        fromUtc: toUtcIso(logFromTime),
+        toUtc: toUtcIso(logToTime),
+        beforeId: logs.nextBeforeId ?? Math.min(...logs.items.map((entry) => entry.id)),
+        includeTotalCount: false,
+      })
+
+      setLogs((current) => {
+        if (!current) {
+          return response
+        }
+
+        const entriesById = new Map(current.items.map((entry) => [entry.id, entry]))
+        for (const entry of response.items) {
+          entriesById.set(entry.id, entry)
+        }
+
+        return {
+          ...current,
+          hasMore: response.hasMore,
+          nextBeforeId: response.nextBeforeId,
+          items: Array.from(entriesById.values()).sort((left, right) => right.id - left.id),
+        }
+      })
+    } catch (err: any) {
+      setLogsError(err.message || 'Failed to load older device logs')
+    } finally {
+      setOlderLogsLoading(false)
+    }
+  }
+
   const withAction = async (action: () => Promise<void>, success: string) => {
     setActionLoading(true)
     setActionError(null)
@@ -327,6 +516,34 @@ export default function DeviceDetails() {
     } finally {
       setActionLoading(false)
       setPendingAction(null)
+    }
+  }
+
+  const deleteLogsOlderThanRetention = async () => {
+    const retentionHours =
+      retentionPresetHours === 'custom'
+        ? Number(customRetentionDays) * 24
+        : Number(retentionPresetHours)
+
+    if (!Number.isFinite(retentionHours) || retentionHours <= 0) {
+      setActionError('The number of days to keep must be greater than zero.')
+      return
+    }
+
+    setActionLoading(true)
+    setActionError(null)
+    setSuccessMessage(null)
+
+    try {
+      const cutoffUtc = new Date(Date.now() - retentionHours * 60 * 60 * 1000).toISOString()
+      const response = await deleteDeviceLogs(deviceId, cutoffUtc)
+      setRetentionDialogOpen(false)
+      setLogReloadVersion((version) => version + 1)
+      setSuccessMessage(`${response.deletedCount.toLocaleString()} old log entries deleted.`)
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to delete old device logs')
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -445,6 +662,14 @@ export default function DeviceDetails() {
       await withAction(async () => {
         await clearDeviceTelemetry(deviceId, 'position')
       }, 'Position history cleared.')
+      return
+    }
+
+    if (pendingAction === 'delete-all-logs') {
+      await withAction(async () => {
+        await deleteDeviceLogs(deviceId)
+        setLogReloadVersion((version) => version + 1)
+      }, 'All device logs deleted.')
       return
     }
 
@@ -832,15 +1057,34 @@ export default function DeviceDetails() {
                 <CardContent>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ mb: 2 }}>
                     <Typography variant="h6">Device log history</Typography>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', md: 'center' }}>
                       <Typography variant="body2" color="text.secondary">
-                        Showing {filteredLogEntries.length} of {logs?.totalCount ?? 0} log entries
+                        Loaded {filteredLogEntries.length}
+                        {logs?.totalCount != null ? ` of ${logs.totalCount.toLocaleString()}` : ''} matching log entries
                       </Typography>
                       {!isFollowingLogs && logEntries.length > 0 ? (
                         <Button size="small" onClick={jumpToLatestLogs}>
                           Jump to latest
                         </Button>
                       ) : null}
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="warning"
+                        onClick={() => setRetentionDialogOpen(true)}
+                        disabled={actionLoading}
+                      >
+                        Delete old logs
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        onClick={() => setPendingAction('delete-all-logs')}
+                        disabled={actionLoading}
+                      >
+                        Delete all logs
+                      </Button>
                     </Stack>
                   </Stack>
 
@@ -886,7 +1130,22 @@ export default function DeviceDetails() {
                     />
                   </Stack>
 
-                  {logEntries.length > 0 ? (
+                  {logs?.hasMore && logEntries.length > 0 ? (
+                    <Button
+                      size="small"
+                      onClick={() => void loadOlderLogs()}
+                      disabled={olderLogsLoading}
+                      sx={{ mb: 1.5 }}
+                    >
+                      {olderLogsLoading ? 'Loading...' : 'Load older matching logs'}
+                    </Button>
+                  ) : null}
+
+                  {logsLoading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+                      <CircularProgress size={28} />
+                    </Box>
+                  ) : logEntries.length > 0 ? (
                     filteredLogEntries.length > 0 ? (
                       <Box
                         ref={logsContainerRef}
@@ -1001,6 +1260,7 @@ export default function DeviceDetails() {
             {pendingAction === 'regenerate' && 'This invalidates the current device credential and requires the device to rediscover before sending updates again.'}
             {pendingAction === 'clear-temperature' && 'This permanently removes all stored temperature history for this device.'}
             {pendingAction === 'clear-position' && 'This permanently removes all stored position history for this device.'}
+            {pendingAction === 'delete-all-logs' && 'This permanently removes every stored log entry for this device. New device logs will continue to be collected.'}
             {pendingAction === 'delete' && 'This permanently deletes the device together with its telemetry and logs.'}
           </Typography>
         </DialogContent>
@@ -1008,8 +1268,55 @@ export default function DeviceDetails() {
           <Button onClick={() => setPendingAction(null)} disabled={actionLoading}>
             Cancel
           </Button>
-          <Button onClick={() => void runPendingAction()} color={pendingAction === 'delete' ? 'error' : 'primary'} disabled={actionLoading}>
+          <Button
+            onClick={() => void runPendingAction()}
+            color={pendingAction === 'delete' || pendingAction === 'delete-all-logs' ? 'error' : 'primary'}
+            disabled={actionLoading}
+          >
             {actionLoading ? 'Working...' : 'Confirm'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={retentionDialogOpen} onClose={() => !actionLoading && setRetentionDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Delete old device logs</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Choose how much recent history to keep. Older entries will be permanently deleted.
+            </Typography>
+            <FormControl fullWidth>
+              <InputLabel id="log-retention-label">Keep recent logs</InputLabel>
+              <Select
+                labelId="log-retention-label"
+                label="Keep recent logs"
+                value={retentionPresetHours}
+                onChange={(event) => setRetentionPresetHours(event.target.value)}
+              >
+                <MenuItem value="1">Last 1 hour</MenuItem>
+                <MenuItem value="24">Last 24 hours</MenuItem>
+                <MenuItem value="168">Last 7 days (1 week)</MenuItem>
+                <MenuItem value="custom">Custom number of days</MenuItem>
+              </Select>
+            </FormControl>
+            {retentionPresetHours === 'custom' ? (
+              <TextField
+                label="Days to keep"
+                type="number"
+                value={customRetentionDays}
+                onChange={(event) => setCustomRetentionDays(event.target.value)}
+                inputProps={{ min: 1, step: 1 }}
+                fullWidth
+              />
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRetentionDialogOpen(false)} disabled={actionLoading}>
+            Cancel
+          </Button>
+          <Button color="error" onClick={() => void deleteLogsOlderThanRetention()} disabled={actionLoading}>
+            {actionLoading ? 'Deleting...' : 'Delete older logs'}
           </Button>
         </DialogActions>
       </Dialog>
