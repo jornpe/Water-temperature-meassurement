@@ -1,0 +1,32 @@
+.device-map-pin-wrapper {
+  background: transparent;
+  border: 0;
+}
+
+.device-map-pin {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 3px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  background: #1976d2;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.38);
+  transform: rotate(-45deg);
+}
+
+.device-map-pin::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.device-map-pin > span {
+  transform: rotate(45deg);
+}
+
+.leaflet-container {
+  font-family: inherit;
+}

@@ -14,6 +14,7 @@ import {
   Divider,
   FormControl,
   FormControlLabel,
+  Grid,
   InputLabel,
   MenuItem,
   Select,
@@ -24,7 +25,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { ArrowBack } from '@mui/icons-material'
+import { AccessTime, ArrowBack, Thermostat } from '@mui/icons-material'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   clearDeviceTelemetry,
@@ -38,6 +39,9 @@ import {
   type DeviceDetail,
   type DeviceLogsResponse,
 } from '../api'
+import BatteryHistoryChart from '../components/BatteryHistoryChart'
+import BatteryIndicator from '../components/BatteryIndicator'
+import DeviceMap from '../components/DeviceMap'
 
 type DeviceTab = 0 | 1 | 2
 type PendingAction = 'regenerate' | 'clear-temperature' | 'clear-position' | 'delete-all-logs' | 'delete' | null
@@ -752,75 +756,165 @@ export default function DeviceDetails() {
 
           {tab === 0 && device && (
             <Stack spacing={3}>
-              <Stack direction={{ xs: 'column', lg: 'row' }} spacing={3}>
-                <Card variant="outlined" sx={{ flex: 1 }}>
-                  <CardContent>
-                    <Typography variant="h6" sx={{ mb: 2 }}>
-                      Latest sensor snapshot
-                    </Typography>
-                    <Stack direction="row" flexWrap="wrap" gap={2}>
-                      <DetailRow label="Temperature" value={formatValue(device.latestTemperatureCelsius, '°C')} />
-                      <DetailRow label="Last seen" value={formatDate(device.lastSeenAtUtc)} />
-                      <DetailRow label="Last update" value={formatDate(device.lastUpdateReceivedAtUtc)} />
-                      <DetailRow label="Last discovered" value={formatDate(device.lastDiscoveredAtUtc)} />
-                      <DetailRow label="Registered at" value={formatDate(device.registeredAtUtc)} />
-                      <DetailRow label="Latest temperature at" value={formatDate(device.latestTemperatureAtUtc)} />
-                    </Stack>
-                  </CardContent>
-                </Card>
-
-                <Card variant="outlined" sx={{ flex: 1 }}>
-                  <CardContent>
-                    <Typography variant="h6" sx={{ mb: 2 }}>
-                      Battery status
-                    </Typography>
-                    <Stack direction="row" flexWrap="wrap" gap={2}>
-                      <DetailRow label="Percentage" value={formatValue(device.battery.percentage, '%')} />
-                      <DetailRow label="Charge state" value={formatBatteryState(device.battery.chargeState)} />
-                      <DetailRow label="Modem voltage" value={formatValue(device.battery.modemMillivolts, ' mV')} />
-                      <DetailRow label="ADC voltage" value={formatValue(device.battery.adcVoltage, ' V')} />
-                      <DetailRow label="Modem reading valid" value={formatValue(device.battery.modemReadingValid)} />
-                      <DetailRow label="Recorded at" value={formatDate(device.battery.recordedAtUtc)} />
-                    </Stack>
-                  </CardContent>
-                </Card>
-
-                <Card variant="outlined" sx={{ flex: 1 }}>
-                  <CardContent>
-                    <Typography variant="h6" sx={{ mb: 2 }}>
-                      Position snapshot
-                    </Typography>
-                    <Stack direction="row" flexWrap="wrap" gap={2}>
-                      <DetailRow label="Latitude" value={formatValue(device.position.latitude)} />
-                      <DetailRow label="Longitude" value={formatValue(device.position.longitude)} />
-                      <DetailRow label="Altitude" value={formatValue(device.position.altitudeMeters, ' m')} />
-                      <DetailRow label="GPS time" value={formatDate(device.position.gpsTimeUtc)} />
-                      <DetailRow label="Speed" value={formatValue(device.position.speedKnots, ' kn')} />
-                      <DetailRow label="HDOP" value={formatValue(device.position.hdop)} />
-                      <DetailRow label="Satellites visible" value={formatValue(device.position.satellitesVisible)} />
-                      <DetailRow label="Satellites used" value={formatValue(device.position.satellitesUsed)} />
-                      <DetailRow label="Recorded at" value={formatDate(device.position.recordedAtUtc)} />
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Stack>
-
-              <Card variant="outlined">
+              <Card
+                sx={{
+                  overflow: 'hidden',
+                  background: (theme) =>
+                    `linear-gradient(135deg, ${theme.palette.primary.main}18 0%, ${theme.palette.background.paper} 52%, ${theme.palette.success.main}12 100%)`,
+                  border: 1,
+                  borderColor: 'divider',
+                }}
+              >
                 <CardContent>
-                  <Typography variant="h6" sx={{ mb: 2 }}>
-                    Stored telemetry
-                  </Typography>
-                  <Stack direction="row" flexWrap="wrap" gap={2} alignItems="center">
-                    <DetailRow label="Temperature history entries" value={String(device.temperatureHistoryCount)} />
-                    <DetailRow label="Position history entries" value={String(device.positionHistoryCount)} />
-                    {device.status === 'registered' ? null : (
-                      <Typography variant="body2" color="text.secondary">
-                        Register this device below before editing runtime configuration.
-                      </Typography>
-                    )}
-                  </Stack>
+                  <Grid container spacing={3} alignItems="center">
+                    <Grid size={{ xs: 12, md: 4 }}>
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <Box
+                          sx={{
+                            width: 56,
+                            height: 56,
+                            display: 'grid',
+                            placeItems: 'center',
+                            borderRadius: 2,
+                            color: 'primary.main',
+                            bgcolor: 'primary.main',
+                            backgroundColor: 'color-mix(in srgb, currentColor 12%, transparent)',
+                          }}
+                        >
+                          <Thermostat sx={{ fontSize: 38 }} />
+                        </Box>
+                        <Stack spacing={0.25}>
+                          <Typography variant="overline" color="text.secondary">
+                            Water temperature
+                          </Typography>
+                          <Typography variant="h3" sx={{ fontWeight: 700, lineHeight: 1 }}>
+                            {typeof device.latestTemperatureCelsius === 'number'
+                              ? `${device.latestTemperatureCelsius.toFixed(1)}°C`
+                              : '--'}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {formatDate(device.latestTemperatureAtUtc)}
+                          </Typography>
+                        </Stack>
+                      </Stack>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 4 }}>
+                      <BatteryIndicator
+                        percentage={device.battery.percentage}
+                        chargeState={device.battery.chargeState}
+                        batteryState={device.battery.batteryState}
+                        size="hero"
+                      />
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 4 }}>
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <AccessTime sx={{ fontSize: 42, color: 'text.secondary' }} />
+                        <Stack spacing={0.25}>
+                          <Typography variant="overline" color="text.secondary">
+                            Last seen
+                          </Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 650 }}>
+                            {formatDate(device.lastSeenAtUtc)}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Device activity
+                          </Typography>
+                        </Stack>
+                      </Stack>
+                    </Grid>
+                  </Grid>
                 </CardContent>
               </Card>
+
+              <Grid container spacing={3}>
+                <Grid size={{ xs: 12, lg: 8 }}>
+                  <DeviceMap deviceId={device.id} position={device.position} />
+                </Grid>
+                <Grid size={{ xs: 12, lg: 4 }}>
+                  <Card variant="outlined" sx={{ height: '100%' }}>
+                    <CardContent>
+                      <Typography variant="h6" sx={{ mb: 2 }}>
+                        Position snapshot
+                      </Typography>
+                      <Stack direction="row" flexWrap="wrap" gap={2}>
+                        <DetailRow label="Latitude" value={formatValue(device.position.latitude)} />
+                        <DetailRow label="Longitude" value={formatValue(device.position.longitude)} />
+                        <DetailRow label="Altitude" value={formatValue(device.position.altitudeMeters, ' m')} />
+                        <DetailRow label="GPS time" value={formatDate(device.position.gpsTimeUtc)} />
+                        <DetailRow label="Speed" value={formatValue(device.position.speedKnots, ' kn')} />
+                        <DetailRow label="HDOP" value={formatValue(device.position.hdop)} />
+                        <DetailRow label="Satellites visible" value={formatValue(device.position.satellitesVisible)} />
+                        <DetailRow label="Satellites used" value={formatValue(device.position.satellitesUsed)} />
+                        <DetailRow label="Recorded at" value={formatDate(device.position.recordedAtUtc)} />
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid size={{ xs: 12, lg: 8 }}>
+                  <BatteryHistoryChart deviceId={device.id} />
+                </Grid>
+                <Grid size={{ xs: 12, lg: 4 }}>
+                  <Card variant="outlined" sx={{ height: '100%' }}>
+                    <CardContent>
+                      <Typography variant="h6" sx={{ mb: 2 }}>
+                        Battery status
+                      </Typography>
+                      <Stack spacing={2.5}>
+                        <BatteryIndicator
+                          percentage={device.battery.percentage}
+                          chargeState={device.battery.chargeState}
+                          batteryState={device.battery.batteryState}
+                        />
+                        <Divider />
+                        <Stack direction="row" flexWrap="wrap" gap={2}>
+                          <DetailRow label="Charge state" value={formatBatteryState(device.battery.chargeState)} />
+                          <DetailRow label="Modem voltage" value={formatValue(device.battery.modemMillivolts, ' mV')} />
+                          <DetailRow label="ADC voltage" value={formatValue(device.battery.adcVoltage, ' V')} />
+                          <DetailRow label="Modem reading valid" value={formatValue(device.battery.modemReadingValid)} />
+                          <DetailRow label="Recorded at" value={formatDate(device.battery.recordedAtUtc)} />
+                        </Stack>
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid size={{ xs: 12, lg: 6 }}>
+                  <Card variant="outlined" sx={{ height: '100%' }}>
+                    <CardContent>
+                      <Typography variant="h6" sx={{ mb: 2 }}>
+                        Latest sensor snapshot
+                      </Typography>
+                      <Stack direction="row" flexWrap="wrap" gap={2}>
+                        <DetailRow label="Temperature" value={formatValue(device.latestTemperatureCelsius, '°C')} />
+                        <DetailRow label="Last seen" value={formatDate(device.lastSeenAtUtc)} />
+                        <DetailRow label="Last discovered" value={formatDate(device.lastDiscoveredAtUtc)} />
+                        <DetailRow label="Registered at" value={formatDate(device.registeredAtUtc)} />
+                        <DetailRow label="Latest temperature at" value={formatDate(device.latestTemperatureAtUtc)} />
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid size={{ xs: 12, lg: 6 }}>
+                  <Card variant="outlined" sx={{ height: '100%' }}>
+                    <CardContent>
+                      <Typography variant="h6" sx={{ mb: 2 }}>
+                        Stored telemetry
+                      </Typography>
+                      <Stack direction="row" flexWrap="wrap" gap={2} alignItems="center">
+                        <DetailRow label="Temperature history entries" value={String(device.temperatureHistoryCount)} />
+                        <DetailRow label="Position history entries" value={String(device.positionHistoryCount)} />
+                        {device.status === 'registered' ? null : (
+                          <Typography variant="body2" color="text.secondary">
+                            Register this device below before editing runtime configuration.
+                          </Typography>
+                        )}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
 
               {device.status === 'unregistered' && (
                 <Card variant="outlined">

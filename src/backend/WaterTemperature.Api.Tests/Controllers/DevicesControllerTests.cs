@@ -32,6 +32,106 @@ public class DevicesControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDevices_IncludesLatestBatterySummary()
+    {
+        _dbContext.Devices.Add(new Device
+        {
+            DeviceIdentifier = "device-1",
+            Status = DeviceRegistrationStatus.Registered,
+            LatestBatteryPercentage = 74,
+            LatestBatteryChargeState = 1,
+            LatestBatteryState = BatteryState.Charging,
+            LatestBatteryAtUtc = DateTime.UtcNow,
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetDevices();
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsAssignableFrom<IEnumerable<DeviceSummaryResponse>>(okResult.Value);
+        var device = Assert.Single(response);
+
+        Assert.Equal(74, device.LatestBatteryPercentage);
+        Assert.Equal("Charging", device.LatestBatteryStatus);
+        Assert.NotNull(device.LatestBatteryAtUtc);
+    }
+
+    [Fact]
+    public async Task GetDevicePositions_FiltersAndReturnsPointsChronologically()
+    {
+        var device = new Device { DeviceIdentifier = "device-1", Status = DeviceRegistrationStatus.Registered };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var now = DateTime.UtcNow;
+        _dbContext.DevicePositionHistory.AddRange(
+            new DevicePositionHistory { DeviceId = device.Id, Latitude = 59.91, Longitude = 10.75, RecordedAtUtc = now.AddHours(-3) },
+            new DevicePositionHistory { DeviceId = device.Id, Latitude = 59.92, Longitude = 10.76, RecordedAtUtc = now.AddHours(-2) },
+            new DevicePositionHistory { DeviceId = device.Id, Latitude = 59.93, Longitude = 10.77, RecordedAtUtc = now.AddHours(-1) });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetDevicePositions(
+            device.Id,
+            fromUtc: now.AddHours(-2.5),
+            toUtc: now.AddMinutes(-30));
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<DevicePositionHistoryResponse>(okResult.Value);
+
+        Assert.Equal(2, response.TotalCount);
+        Assert.False(response.IsSampled);
+        Assert.Equal([59.92, 59.93], response.Items.Select(item => item.Latitude).ToArray());
+    }
+
+    [Fact]
+    public async Task GetDeviceBatteryHistory_SamplesLargeSelectedRangeAndKeepsLastPoint()
+    {
+        var device = new Device { DeviceIdentifier = "device-1", Status = DeviceRegistrationStatus.Registered };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var fromUtc = DateTime.UtcNow.AddDays(-2);
+        var entries = Enumerable.Range(0, 205)
+            .Select(index => new DeviceBatteryHistory
+            {
+                DeviceId = device.Id,
+                ModemReadingValid = true,
+                ChargeState = 0,
+                BatteryState = BatteryState.NotCharging,
+                Percentage = index % 101,
+                ModemMillivolts = 3_700 + index,
+                AdcVoltage = 3.7f,
+                RecordedAtUtc = fromUtc.AddMinutes(index),
+            });
+        _dbContext.DeviceBatteryHistory.AddRange(entries);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetDeviceBatteryHistory(
+            device.Id,
+            fromUtc,
+            fromUtc.AddDays(1),
+            maxPoints: 100);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<DeviceBatteryHistoryResponse>(okResult.Value);
+
+        Assert.Equal(205, response.TotalCount);
+        Assert.True(response.IsSampled);
+        Assert.InRange(response.Items.Count, 2, 100);
+        Assert.Equal(fromUtc.AddMinutes(204), response.Items[^1].RecordedAtUtc);
+    }
+
+    [Fact]
+    public async Task GetBatteryHistory_WithReversedRange_ReturnsBadRequest()
+    {
+        var now = DateTime.UtcNow;
+
+        var result = await _controller.GetDeviceBatteryHistory(1, now, now.AddHours(-1));
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
     public async Task RegisterDevice_ValidRequest_PersistsRegisteredStateAndCredential()
     {
         var device = new Device { DeviceIdentifier = "device-1" };

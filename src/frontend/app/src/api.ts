@@ -61,6 +61,9 @@ export interface DeviceSummary {
   place?: string | null
   pushToHomeAssistant: boolean
   latestTemperatureCelsius?: number | null
+  latestBatteryPercentage?: number | null
+  latestBatteryStatus?: string | null
+  latestBatteryAtUtc?: string | null
   lastUpdateReceivedAtUtc?: string | null
   lastDiscoveredAtUtc?: string | null
 }
@@ -75,6 +78,29 @@ export interface DevicePositionSnapshot {
   satellitesVisible?: number | null
   satellitesUsed?: number | null
   recordedAtUtc?: string | null
+}
+
+export interface DevicePositionHistoryPoint {
+  id: number
+  latitude: number
+  longitude: number
+  altitudeMeters?: number | null
+  gpsTimeUtc?: string | null
+  speedKnots?: number | null
+  hdop?: number | null
+  satellitesVisible?: number | null
+  satellitesUsed?: number | null
+  recordedAtUtc: string
+}
+
+export interface DevicePositionHistoryResponse {
+  deviceId: number
+  deviceIdentifier: string
+  fromUtc?: string | null
+  toUtc?: string | null
+  totalCount: number
+  isSampled: boolean
+  items: DevicePositionHistoryPoint[]
 }
 
 export interface DeviceWifiDiagnostics {
@@ -114,6 +140,33 @@ export interface DeviceBatteryDiagnostics {
   modemMillivolts?: number | null
   adcVoltage?: number | null
   recordedAtUtc?: string | null
+}
+
+export interface DeviceBatteryHistoryPoint {
+  id: number
+  modemReadingValid: boolean
+  chargeState: number
+  batteryState: BatteryState | number
+  percentage: number
+  modemMillivolts: number
+  adcVoltage: number
+  recordedAtUtc: string
+}
+
+export interface DeviceBatteryHistoryResponse {
+  deviceId: number
+  deviceIdentifier: string
+  fromUtc?: string | null
+  toUtc?: string | null
+  totalCount: number
+  isSampled: boolean
+  items: DeviceBatteryHistoryPoint[]
+}
+
+export interface TelemetryHistoryQuery {
+  fromUtc?: string
+  toUtc?: string
+  maxPoints?: number
 }
 
 export interface DeviceDetail {
@@ -253,6 +306,32 @@ export async function getDevices(): Promise<DeviceSummary[]> {
 
 export async function getDevice(id: number): Promise<DeviceDetail> {
   return authenticatedFetch(`${base}/api/devices/${id}`)
+}
+
+export async function getDevicePositions(
+  id: number,
+  options: TelemetryHistoryQuery = {},
+): Promise<DevicePositionHistoryResponse> {
+  const query = new URLSearchParams()
+  if (options.fromUtc) query.set('fromUtc', options.fromUtc)
+  if (options.toUtc) query.set('toUtc', options.toUtc)
+  if (options.maxPoints !== undefined) query.set('maxPoints', String(options.maxPoints))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+
+  return authenticatedFetch(`${base}/api/devices/${id}/positions${suffix}`)
+}
+
+export async function getDeviceBatteryHistory(
+  id: number,
+  options: TelemetryHistoryQuery = {},
+): Promise<DeviceBatteryHistoryResponse> {
+  const query = new URLSearchParams()
+  if (options.fromUtc) query.set('fromUtc', options.fromUtc)
+  if (options.toUtc) query.set('toUtc', options.toUtc)
+  if (options.maxPoints !== undefined) query.set('maxPoints', String(options.maxPoints))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+
+  return authenticatedFetch(`${base}/api/devices/${id}/battery-history${suffix}`)
 }
 
 export async function getDeviceLogs(id: number, options: DeviceLogQuery = {}): Promise<DeviceLogsResponse> {

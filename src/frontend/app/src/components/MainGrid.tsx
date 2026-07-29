@@ -9,6 +9,8 @@ import Stack from '@mui/material/Stack';
 import Chip from '@mui/material/Chip';
 import { Thermostat, Sensors, FmdGood, WarningAmber } from '@mui/icons-material';
 import type { DeviceSummary } from '../api';
+import BatteryIndicator from './BatteryIndicator';
+import { formatElapsedTime } from '../utils/formatElapsedTime';
 
 interface MainGridProps {
   devices: DeviceSummary[];
@@ -16,6 +18,7 @@ interface MainGridProps {
 }
 
 export default function MainGrid({ devices, onSelectDevice }: MainGridProps) {
+  const [nowMs, setNowMs] = React.useState(() => Date.now())
   const registeredDevices = devices.filter((device) => device.status === 'registered')
   const unregisteredDevices = devices.length - registeredDevices.length
   const reportingDevices = devices.filter((device) => Boolean(device.lastUpdateReceivedAtUtc)).length
@@ -62,13 +65,10 @@ export default function MainGrid({ devices, onSelectDevice }: MainGridProps) {
     </Card>
   );
 
-  const formatTimestamp = (value?: string | null) => {
-    if (!value) {
-      return 'No updates yet'
-    }
-
-    return new Date(value).toLocaleString()
-  }
+  React.useEffect(() => {
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000)
+    return () => window.clearInterval(intervalId)
+  }, [])
 
   return (
     <Box sx={{ width: '100%', maxWidth: { sm: '100%', md: '1700px' } }}>
@@ -142,14 +142,22 @@ export default function MainGrid({ devices, onSelectDevice }: MainGridProps) {
                                     {device.place || 'No place assigned'}
                                   </Typography>
                                 </Box>
-                                <Chip
-                                  label={device.status === 'registered' ? 'Registered' : 'Unregistered'}
-                                  color={device.status === 'registered' ? 'success' : 'warning'}
-                                  size="small"
-                                />
+                                {device.status === 'unregistered' && (
+                                  <Chip
+                                    label="Unregistered"
+                                    color="warning"
+                                    size="small"
+                                  />
+                                )}
                               </Stack>
 
-                              <Stack direction="row" justifyContent="space-between" alignItems="flex-end">
+                              <Stack
+                                direction={{ xs: 'column', sm: 'row' }}
+                                justifyContent="space-between"
+                                alignItems={{ xs: 'flex-start', sm: 'flex-end' }}
+                                flexWrap="wrap"
+                                gap={2}
+                              >
                                 <Box>
                                   <Typography variant="overline" color="text.secondary">
                                     Latest Temperature
@@ -160,12 +168,20 @@ export default function MainGrid({ devices, onSelectDevice }: MainGridProps) {
                                       : '--'}
                                   </Typography>
                                 </Box>
+                                <BatteryIndicator
+                                  percentage={device.latestBatteryPercentage}
+                                  status={device.latestBatteryStatus}
+                                  size="compact"
+                                />
                                 <Box sx={{ textAlign: 'right' }}>
                                   <Typography variant="overline" color="text.secondary">
-                                    Last Update
+                                    {device.lastUpdateReceivedAtUtc ? 'Last update' : 'Last discovered'}
                                   </Typography>
-                                  <Typography variant="body2">
-                                    {formatTimestamp(device.lastUpdateReceivedAtUtc || device.lastDiscoveredAtUtc)}
+                                  <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                    {formatElapsedTime(
+                                      device.lastUpdateReceivedAtUtc || device.lastDiscoveredAtUtc,
+                                      nowMs,
+                                    )}
                                   </Typography>
                                 </Box>
                               </Stack>

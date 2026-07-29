@@ -19,6 +19,10 @@ public class DevicesController(
 {
     private const int DefaultLogsPageSize = 50;
     private const int MaxLogsPageSize = 200;
+    private const int DefaultPositionHistoryPoints = 5_000;
+    private const int MaxPositionHistoryPoints = 10_000;
+    private const int DefaultBatteryHistoryPoints = 1_500;
+    private const int MaxBatteryHistoryPoints = 5_000;
     private static readonly Regex HomeAssistantDeviceNameRegex = new(
         "^[\\p{L}\\p{N} _\\-().]+$",
         RegexOptions.Compiled);
@@ -39,6 +43,17 @@ public class DevicesController(
                 device.Place,
                 device.PushToHomeAssistant,
                 device.LatestTemperatureCelsius,
+                device.LatestBatteryPercentage,
+                device.LatestBatteryState == BatteryState.Charging || device.LatestBatteryChargeState == 1
+                    ? "Charging"
+                    : device.LatestBatteryState == BatteryState.Full || device.LatestBatteryChargeState == 2
+                        ? "Full"
+                        : device.LatestBatteryState == BatteryState.NotCharging || device.LatestBatteryChargeState == 0
+                            ? "Not charging"
+                            : device.LatestBatteryPercentage.HasValue
+                                ? "Unknown"
+                                : null,
+                device.LatestBatteryAtUtc,
                 device.LastUpdateReceivedAtUtc,
                 device.LastDiscoveredAtUtc))
             .ToListAsync();
@@ -121,6 +136,176 @@ public class DevicesController(
             .SingleOrDefaultAsync();
 
         return device is null ? NotFound() : Ok(device);
+    }
+
+    [HttpGet("{id:int}/positions")]
+    public async Task<ActionResult<DevicePositionHistoryResponse>> GetDevicePositions(
+        int id,
+        [FromQuery] DateTime? fromUtc = null,
+        [FromQuery] DateTime? toUtc = null,
+        [FromQuery] int maxPoints = DefaultPositionHistoryPoints,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedFromUtc = fromUtc.HasValue ? NormalizeUtc(fromUtc.Value) : (DateTime?)null;
+        var normalizedToUtc = toUtc.HasValue ? NormalizeUtc(toUtc.Value) : (DateTime?)null;
+
+        if (normalizedFromUtc > normalizedToUtc)
+        {
+            return BadRequest(new MessageResponse("The position-history start time must be earlier than the end time"));
+        }
+
+        var device = await dbContext.Devices
+            .AsNoTracking()
+            .Where(item => item.Id == id)
+            .Select(item => new { item.Id, item.DeviceIdentifier })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (device is null)
+        {
+            return NotFound();
+        }
+
+        var normalizedMaxPoints = Math.Clamp(maxPoints, 100, MaxPositionHistoryPoints);
+        var query = dbContext.DevicePositionHistory
+            .AsNoTracking()
+            .Where(item => item.DeviceId == id);
+
+        if (normalizedFromUtc.HasValue)
+        {
+            query = query.Where(item => item.RecordedAtUtc >= normalizedFromUtc.Value);
+        }
+
+        if (normalizedToUtc.HasValue)
+        {
+            query = query.Where(item => item.RecordedAtUtc <= normalizedToUtc.Value);
+        }
+
+        var totalCount = await query.LongCountAsync(cancellationToken);
+        var sampleStride = Math.Max(1L, (long)Math.Ceiling(totalCount / (double)normalizedMaxPoints));
+        var items = new List<DevicePositionHistoryPointResponse>(
+            (int)Math.Min(totalCount, normalizedMaxPoints));
+        DevicePositionHistory? lastEntry = null;
+        long index = 0;
+
+        await foreach (var entry in query
+            .OrderBy(item => item.RecordedAtUtc)
+            .ThenBy(item => item.Id)
+            .AsAsyncEnumerable()
+            .WithCancellation(cancellationToken))
+        {
+            lastEntry = entry;
+
+            if (index % sampleStride == 0)
+            {
+                items.Add(ToPositionHistoryResponse(entry));
+            }
+
+            index += 1;
+        }
+
+        if (lastEntry is not null && (items.Count == 0 || items[^1].Id != lastEntry.Id))
+        {
+            var lastResponse = ToPositionHistoryResponse(lastEntry);
+            if (items.Count >= normalizedMaxPoints)
+            {
+                items[^1] = lastResponse;
+            }
+            else
+            {
+                items.Add(lastResponse);
+            }
+        }
+
+        return Ok(new DevicePositionHistoryResponse(
+            device.Id,
+            device.DeviceIdentifier,
+            normalizedFromUtc,
+            normalizedToUtc,
+            totalCount,
+            sampleStride > 1,
+            items));
+    }
+
+    [HttpGet("{id:int}/battery-history")]
+    public async Task<ActionResult<DeviceBatteryHistoryResponse>> GetDeviceBatteryHistory(
+        int id,
+        [FromQuery] DateTime? fromUtc = null,
+        [FromQuery] DateTime? toUtc = null,
+        [FromQuery] int maxPoints = DefaultBatteryHistoryPoints,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedToUtc = toUtc.HasValue ? NormalizeUtc(toUtc.Value) : DateTime.UtcNow;
+        var normalizedFromUtc = fromUtc.HasValue
+            ? NormalizeUtc(fromUtc.Value)
+            : normalizedToUtc.AddDays(-1);
+
+        if (normalizedFromUtc > normalizedToUtc)
+        {
+            return BadRequest(new MessageResponse("The battery-history start time must be earlier than the end time"));
+        }
+
+        var device = await dbContext.Devices
+            .AsNoTracking()
+            .Where(item => item.Id == id)
+            .Select(item => new { item.Id, item.DeviceIdentifier })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (device is null)
+        {
+            return NotFound();
+        }
+
+        var normalizedMaxPoints = Math.Clamp(maxPoints, 100, MaxBatteryHistoryPoints);
+        var query = dbContext.DeviceBatteryHistory
+            .AsNoTracking()
+            .Where(item => item.DeviceId == id
+                && item.RecordedAtUtc >= normalizedFromUtc
+                && item.RecordedAtUtc <= normalizedToUtc);
+
+        var totalCount = await query.LongCountAsync(cancellationToken);
+        var sampleStride = Math.Max(1L, (long)Math.Ceiling(totalCount / (double)normalizedMaxPoints));
+        var items = new List<DeviceBatteryHistoryPointResponse>(
+            (int)Math.Min(totalCount, normalizedMaxPoints));
+        DeviceBatteryHistory? lastEntry = null;
+        long index = 0;
+
+        await foreach (var entry in query
+            .OrderBy(item => item.RecordedAtUtc)
+            .ThenBy(item => item.Id)
+            .AsAsyncEnumerable()
+            .WithCancellation(cancellationToken))
+        {
+            lastEntry = entry;
+
+            if (index % sampleStride == 0)
+            {
+                items.Add(ToBatteryHistoryResponse(entry));
+            }
+
+            index += 1;
+        }
+
+        if (lastEntry is not null && (items.Count == 0 || items[^1].Id != lastEntry.Id))
+        {
+            var lastResponse = ToBatteryHistoryResponse(lastEntry);
+            if (items.Count >= normalizedMaxPoints)
+            {
+                items[^1] = lastResponse;
+            }
+            else
+            {
+                items.Add(lastResponse);
+            }
+        }
+
+        return Ok(new DeviceBatteryHistoryResponse(
+            device.Id,
+            device.DeviceIdentifier,
+            normalizedFromUtc,
+            normalizedToUtc,
+            totalCount,
+            sampleStride > 1,
+            items));
     }
 
     [HttpGet("{id:int}/logs")]
@@ -571,6 +756,34 @@ public class DevicesController(
 
         validationMessage = null;
         return true;
+    }
+
+    private static DevicePositionHistoryPointResponse ToPositionHistoryResponse(DevicePositionHistory entry)
+    {
+        return new DevicePositionHistoryPointResponse(
+            entry.Id,
+            entry.Latitude,
+            entry.Longitude,
+            entry.AltitudeMeters,
+            entry.GpsTimeUtc,
+            entry.SpeedKnots,
+            entry.Hdop,
+            entry.SatellitesVisible,
+            entry.SatellitesUsed,
+            entry.RecordedAtUtc);
+    }
+
+    private static DeviceBatteryHistoryPointResponse ToBatteryHistoryResponse(DeviceBatteryHistory entry)
+    {
+        return new DeviceBatteryHistoryPointResponse(
+            entry.Id,
+            entry.ModemReadingValid,
+            entry.ChargeState,
+            entry.BatteryState,
+            entry.Percentage,
+            entry.ModemMillivolts,
+            entry.AdcVoltage,
+            entry.RecordedAtUtc);
     }
 
     private static DateTime NormalizeUtc(DateTime value)

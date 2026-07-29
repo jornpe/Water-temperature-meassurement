@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <ArduinoHttpClient.h>
 #include <ArduinoJson.h>
+#include <DallasTemperature.h>
+#include <OneWire.h>
 #include <Preferences.h>
 #include <TinyGsmClient.h>
 #include <WiFi.h>
@@ -15,13 +17,14 @@ constexpr int MODEM_TX_PIN = 27;
 constexpr int MODEM_PWRKEY_PIN = 4;
 constexpr int MODEM_DTR_PIN = 25;
 constexpr int BATTERY_ADC_PIN = 35;
+constexpr int TEMPERATURE_DATA_PIN = 21;
 
 constexpr uint32_t MODEM_BAUD_RATE = 115200;
 constexpr uint8_t SIM7000_NETWORK_MODE_LTE_ONLY = 38;
 constexpr uint8_t SIM7000_PREFERRED_MODE_CAT_M = 1;
 constexpr uint32_t DEFAULT_REPORT_INTERVAL_SECONDS = 30;
 constexpr uint32_t DISCOVERY_INTERVAL_MS = 30000;
-constexpr size_t MAX_LOGS_PER_UPDATE = 25;
+constexpr size_t MAX_LOGS_PER_UPDATE = 1000;
 constexpr size_t MAX_LOG_MESSAGE_LENGTH = 200;
 
 struct WifiSettings
@@ -100,6 +103,8 @@ TinyGsm modem(SerialAT);
 TinyGsmClientSecure cellularClient(modem);
 WiFiClientSecure wifiClient;
 Preferences preferences;
+OneWire temperatureOneWire(TEMPERATURE_DATA_PIN);
+DallasTemperature temperatureSensors(&temperatureOneWire);
 
 enum class NetworkTransport
 {
@@ -184,6 +189,14 @@ struct BatteryStatus
 };
 
 BatteryStatus latestBatteryStatus;
+
+struct TemperatureStatus
+{
+    bool valid = false;
+    float celsius = 0;
+};
+
+TemperatureStatus latestTemperatureStatus;
 
 struct HttpResponse
 {
@@ -282,12 +295,6 @@ String buildApiPath(const String& endpoint)
     return basePath + endpoint;
 }
 
-float buildDummyTemperatureCelsius(const uint32_t now)
-{
-    const float offset = static_cast<float>((now / 1000) % 20) / 10.0f;
-    return 18.5f + offset;
-}
-
 String truncateLogMessage(const String& message)
 {
     if (message.length() <= MAX_LOG_MESSAGE_LENGTH)
@@ -377,6 +384,13 @@ void loadPersistedDeviceState()
     {
         reportIntervalSeconds = DEFAULT_REPORT_INTERVAL_SECONDS;
     }
+
+    logInfo("Loaded persisted device state: reportIntervalSeconds="
+        + String(reportIntervalSeconds)
+        + ", appliedConfigurationVersion="
+        + String(appliedConfigurationVersion)
+        + ", apiKey="
+        + (deviceApiKey.isEmpty() ? "<empty>" : "<present>"));
 
     deviceMode = deviceApiKey.isEmpty() ? DeviceMode::Discovery : DeviceMode::Operational;
 }
@@ -751,12 +765,12 @@ bool connectNetwork()
     lastNetworkAttemptMs = millis();
 
 
-    if (config.cellular.enabled && connectCellular())
+    if (connectWifi())
     {
         return true;
     }
-
-    if (connectWifi())
+    
+    if (config.cellular.enabled && connectCellular())
     {
         return true;
     }
@@ -820,8 +834,12 @@ String buildUpdatePayload(const uint32_t now)
 
     JsonDocument document;
     document["firmwareVersion"] = config.tracker.firmwareVersion;
-    document["temperature"] = buildDummyTemperatureCelsius(now);
     document["deviceUptimeMs"] = now;
+
+    if (latestTemperatureStatus.valid)
+    {
+        document["temperature"] = latestTemperatureStatus.celsius;
+    }
 
     JsonObject runtimeConfiguration = document["runtimeConfiguration"].to<JsonObject>();
     runtimeConfiguration["appliedConfigurationVersion"] = appliedConfigurationVersion;
@@ -1191,6 +1209,84 @@ void readBatteryStatus()
     latestBatteryStatus = status;
 }
 
+void initializeTemperatureSensor()
+{
+    temperatureSensors.begin();
+
+    const uint8_t sensorCount = temperatureSensors.getDeviceCount();
+
+    if (sensorCount == 0)
+    {
+        logError(
+            "No DS18B20 temperature sensor found on GPIO "
+            + String(TEMPERATURE_DATA_PIN)
+            + ". Check the wiring and 4.7 kOhm DATA-to-3V3 pull-up resistor.");
+        return;
+    }
+
+    logInfo(
+        "DS18B20 temperature sensor initialized on GPIO "
+        + String(TEMPERATURE_DATA_PIN)
+        + ". Sensors found: "
+        + String(sensorCount));
+}
+
+void readTemperature()
+{
+    TemperatureStatus status;
+    DeviceAddress sensorAddress;
+
+    if (!temperatureSensors.getAddress(sensorAddress, 0))
+    {
+        temperatureSensors.begin();
+
+        if (!temperatureSensors.getAddress(sensorAddress, 0))
+        {
+            logError(
+                "Cannot read temperature: no DS18B20 found on GPIO "
+                + String(TEMPERATURE_DATA_PIN)
+                + ".");
+            latestTemperatureStatus = status;
+            return;
+        }
+    }
+
+    if (!temperatureSensors.isConnected(sensorAddress))
+    {
+        logError("Cannot read temperature: the DS18B20 is not responding.");
+        temperatureSensors.begin();
+        latestTemperatureStatus = status;
+        return;
+    }
+
+    temperatureSensors.requestTemperatures();
+
+    const float temperatureCelsius = temperatureSensors.getTempC(sensorAddress);
+
+    if (temperatureCelsius == DEVICE_DISCONNECTED_C)
+    {
+        logError("Cannot read temperature: the DS18B20 disconnected during the reading.");
+        latestTemperatureStatus = status;
+        return;
+    }
+
+    if (isnan(temperatureCelsius) || temperatureCelsius < -55.0F || temperatureCelsius > 125.0F)
+    {
+        logError(
+            "Cannot read temperature: invalid DS18B20 value "
+            + String(temperatureCelsius, 2)
+            + " C.");
+        latestTemperatureStatus = status;
+        return;
+    }
+
+    status.valid = true;
+    status.celsius = temperatureCelsius;
+    latestTemperatureStatus = status;
+
+    logInfo("Temperature: " + String(temperatureCelsius, 2) + " C");
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -1208,6 +1304,7 @@ void setup()
     logInfo("Device ID: " + deviceId);
 
     loadPersistedDeviceState();
+    initializeTemperatureSensor();
 
     logInfo("Loaded device mode: " + String(deviceModeName()));
     logInfo("Report interval: " + String(reportIntervalSeconds) + " seconds");
@@ -1220,6 +1317,7 @@ void setup()
 void loop()
 {
     readBatteryStatus();
+    readTemperature();
     ensureNetworkConnection();
     ensureGpsReady();
     pollGps();
@@ -1234,10 +1332,12 @@ void loop()
 
     if (deviceMode == DeviceMode::Discovery)
     {
+        logInfo("Running in discovery mode.");
         runDiscoveryMode(now);
     }
     else
     {
+        logInfo("Running in operational mode.");
         runOperationalMode(now);
     }
 

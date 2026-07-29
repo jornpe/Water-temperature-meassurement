@@ -24,6 +24,9 @@ public record DeviceSummaryResponse(
     string? Place,
     bool PushToHomeAssistant,
     decimal? LatestTemperatureCelsius,
+    int? LatestBatteryPercentage,
+    string? LatestBatteryStatus,
+    DateTime? LatestBatteryAtUtc,
     DateTime? LastUpdateReceivedAtUtc,
     DateTime? LastDiscoveredAtUtc);
 
@@ -47,6 +50,27 @@ public record DevicePositionSnapshotResponse(
     int? SatellitesVisible,
     int? SatellitesUsed,
     DateTime? RecordedAtUtc);
+
+public record DevicePositionHistoryPointResponse(
+    long Id,
+    double Latitude,
+    double Longitude,
+    double? AltitudeMeters,
+    DateTime? GpsTimeUtc,
+    double? SpeedKnots,
+    double? Hdop,
+    int? SatellitesVisible,
+    int? SatellitesUsed,
+    DateTime RecordedAtUtc);
+
+public record DevicePositionHistoryResponse(
+    int DeviceId,
+    string DeviceIdentifier,
+    DateTime? FromUtc,
+    DateTime? ToUtc,
+    long TotalCount,
+    bool IsSampled,
+    IReadOnlyList<DevicePositionHistoryPointResponse> Items);
 
 public record DeviceWifiDiagnosticsResponse(
     string? LocalIp,
@@ -80,6 +104,25 @@ public record DeviceBatteryDiagnosticsResponse(
     int? ModemMillivolts,
     float? AdcVoltage,
     DateTime? RecordedAtUtc);
+
+public record DeviceBatteryHistoryPointResponse(
+    long Id,
+    bool ModemReadingValid,
+    int ChargeState,
+    BatteryState BatteryState,
+    int Percentage,
+    int ModemMillivolts,
+    float AdcVoltage,
+    DateTime RecordedAtUtc);
+
+public record DeviceBatteryHistoryResponse(
+    int DeviceId,
+    string DeviceIdentifier,
+    DateTime? FromUtc,
+    DateTime? ToUtc,
+    long TotalCount,
+    bool IsSampled,
+    IReadOnlyList<DeviceBatteryHistoryPointResponse> Items);
 
 public record DeviceDetailResponse(
     int Id,
