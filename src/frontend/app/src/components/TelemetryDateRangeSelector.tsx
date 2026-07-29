@@ -12,7 +12,19 @@ import {
 } from '@mui/material'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 
-export type TelemetryRangePreset = '24h' | '7d' | '30d' | '90d' | 'all' | 'custom'
+export type TelemetryRangePreset =
+  | '1h'
+  | '3h'
+  | '6h'
+  | '12h'
+  | '24h'
+  | '7d'
+  | '14d'
+  | '21d'
+  | '30d'
+  | '90d'
+  | 'all'
+  | 'custom'
 
 export interface TelemetryDateRange {
   preset: TelemetryRangePreset
@@ -28,8 +40,14 @@ interface TelemetryDateRangeSelectorProps {
 }
 
 const presetDurationsMs: Partial<Record<TelemetryRangePreset, number>> = {
+  '1h': 60 * 60 * 1000,
+  '3h': 3 * 60 * 60 * 1000,
+  '6h': 6 * 60 * 60 * 1000,
+  '12h': 12 * 60 * 60 * 1000,
   '24h': 24 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
+  '14d': 14 * 24 * 60 * 60 * 1000,
+  '21d': 21 * 24 * 60 * 60 * 1000,
   '30d': 30 * 24 * 60 * 60 * 1000,
   '90d': 90 * 24 * 60 * 60 * 1000,
 }
@@ -128,8 +146,14 @@ export default function TelemetryDateRangeSelector({
           label="Date range"
           onChange={handlePresetChange}
         >
+          <MenuItem value="1h">Last 1 hour</MenuItem>
+          <MenuItem value="3h">Last 3 hours</MenuItem>
+          <MenuItem value="6h">Last 6 hours</MenuItem>
+          <MenuItem value="12h">Last 12 hours</MenuItem>
           <MenuItem value="24h">Last 24 hours</MenuItem>
           <MenuItem value="7d">Last 7 days</MenuItem>
+          <MenuItem value="14d">Last 14 days</MenuItem>
+          <MenuItem value="21d">Last 21 days</MenuItem>
           <MenuItem value="30d">Last 30 days</MenuItem>
           <MenuItem value="90d">Last 90 days</MenuItem>
           <MenuItem value="all">All history</MenuItem>
