@@ -103,6 +103,22 @@ export interface DevicePositionHistoryResponse {
   items: DevicePositionHistoryPoint[]
 }
 
+export interface DeviceTemperatureHistoryPoint {
+  id: number
+  temperatureCelsius: number
+  recordedAtUtc: string
+}
+
+export interface DeviceTemperatureHistoryResponse {
+  deviceId: number
+  deviceIdentifier: string
+  fromUtc?: string | null
+  toUtc?: string | null
+  totalCount: number
+  isSampled: boolean
+  items: DeviceTemperatureHistoryPoint[]
+}
+
 export interface DeviceWifiDiagnostics {
   localIp?: string | null
   wifiRssiDbm?: number | null
@@ -332,6 +348,19 @@ export async function getDeviceBatteryHistory(
   const suffix = query.size > 0 ? `?${query.toString()}` : ''
 
   return authenticatedFetch(`${base}/api/devices/${id}/battery-history${suffix}`)
+}
+
+export async function getDeviceTemperatureHistory(
+  id: number,
+  options: TelemetryHistoryQuery = {},
+): Promise<DeviceTemperatureHistoryResponse> {
+  const query = new URLSearchParams()
+  if (options.fromUtc) query.set('fromUtc', options.fromUtc)
+  if (options.toUtc) query.set('toUtc', options.toUtc)
+  if (options.maxPoints !== undefined) query.set('maxPoints', String(options.maxPoints))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+
+  return authenticatedFetch(`${base}/api/devices/${id}/temperature-history${suffix}`)
 }
 
 export async function getDeviceLogs(id: number, options: DeviceLogQuery = {}): Promise<DeviceLogsResponse> {

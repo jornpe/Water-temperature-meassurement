@@ -133,8 +133,8 @@ export default function MainGrid({ devices, onSelectDevice }: MainGridProps) {
                         <CardActionArea sx={{ height: '100%' }} onClick={() => onSelectDevice(device)}>
                           <CardContent>
                             <Stack spacing={2}>
-                              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
-                                <Box>
+                              <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                                <Box sx={{ minWidth: 0 }}>
                                   <Typography variant="h6" sx={{ fontWeight: 600 }}>
                                     {device.name || device.deviceId}
                                   </Typography>
@@ -142,19 +142,26 @@ export default function MainGrid({ devices, onSelectDevice }: MainGridProps) {
                                     {device.place || 'No place assigned'}
                                   </Typography>
                                 </Box>
-                                {device.status === 'unregistered' && (
-                                  <Chip
-                                    label="Unregistered"
-                                    color="warning"
-                                    size="small"
+                                <Stack spacing={1} alignItems="flex-end" sx={{ flexShrink: 0 }}>
+                                  <BatteryIndicator
+                                    percentage={device.latestBatteryPercentage}
+                                    status={device.latestBatteryStatus}
+                                    size="compact"
                                   />
-                                )}
+                                  {device.status === 'unregistered' && (
+                                    <Chip
+                                      label="Unregistered"
+                                      color="warning"
+                                      size="small"
+                                    />
+                                  )}
+                                </Stack>
                               </Stack>
 
                               <Stack
-                                direction={{ xs: 'column', sm: 'row' }}
+                                direction="row"
                                 justifyContent="space-between"
-                                alignItems={{ xs: 'flex-start', sm: 'flex-end' }}
+                                alignItems="flex-end"
                                 flexWrap="wrap"
                                 gap={2}
                               >
@@ -165,14 +172,9 @@ export default function MainGrid({ devices, onSelectDevice }: MainGridProps) {
                                   <Typography variant="h4">
                                     {typeof device.latestTemperatureCelsius === 'number'
                                       ? `${device.latestTemperatureCelsius.toFixed(1)}°C`
-                                      : '--'}
+                                    : '--'}
                                   </Typography>
                                 </Box>
-                                <BatteryIndicator
-                                  percentage={device.latestBatteryPercentage}
-                                  status={device.latestBatteryStatus}
-                                  size="compact"
-                                />
                                 <Box sx={{ textAlign: 'right' }}>
                                   <Typography variant="overline" color="text.secondary">
                                     {device.lastUpdateReceivedAtUtc ? 'Last update' : 'Last discovered'}

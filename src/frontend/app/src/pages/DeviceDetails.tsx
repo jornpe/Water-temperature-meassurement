@@ -42,6 +42,7 @@ import {
 import BatteryHistoryChart from '../components/BatteryHistoryChart'
 import BatteryIndicator from '../components/BatteryIndicator'
 import DeviceMap from '../components/DeviceMap'
+import TemperatureHistoryChart from '../components/TemperatureHistoryChart'
 
 type DeviceTab = 0 | 1 | 2
 type PendingAction = 'regenerate' | 'clear-temperature' | 'clear-position' | 'delete-all-logs' | 'delete' | null
@@ -746,7 +747,34 @@ export default function DeviceDetails() {
 
       <Card>
         <CardContent>
-          <Tabs value={tab} onChange={(_, value: DeviceTab) => setTab(value)} variant="scrollable" allowScrollButtonsMobile>
+          <Box sx={{ display: { xs: 'block', sm: 'none' } }}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="device-section-label">Device section</InputLabel>
+              <Select
+                labelId="device-section-label"
+                label="Device section"
+                value={tab}
+                onChange={(event) => setTab(Number(event.target.value) as DeviceTab)}
+              >
+                <MenuItem value={0}>Sensor information</MenuItem>
+                <MenuItem value={1}>Network and configuration</MenuItem>
+                <MenuItem value={2}>Device logs</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+          <Tabs
+            value={tab}
+            onChange={(_, value: DeviceTab) => setTab(value)}
+            variant="scrollable"
+            allowScrollButtonsMobile
+            sx={{
+              display: { xs: 'none', sm: 'flex' },
+              '& .MuiTab-root': {
+                minWidth: 'max-content',
+                px: 2,
+              },
+            }}
+          >
             <Tab label="Sensor information" value={0} />
             <Tab label="Network and configuration" value={1} />
             <Tab label="Device logs" value={2} />
@@ -852,6 +880,26 @@ export default function DeviceDetails() {
                 </Grid>
 
                 <Grid size={{ xs: 12, lg: 8 }}>
+                  <TemperatureHistoryChart deviceId={device.id} />
+                </Grid>
+                <Grid size={{ xs: 12, lg: 4 }}>
+                  <Card variant="outlined" sx={{ height: '100%' }}>
+                    <CardContent>
+                      <Typography variant="h6" sx={{ mb: 2 }}>
+                        Latest sensor snapshot
+                      </Typography>
+                      <Stack direction="row" flexWrap="wrap" gap={2}>
+                        <DetailRow label="Temperature" value={formatValue(device.latestTemperatureCelsius, '°C')} />
+                        <DetailRow label="Last seen" value={formatDate(device.lastSeenAtUtc)} />
+                        <DetailRow label="Last discovered" value={formatDate(device.lastDiscoveredAtUtc)} />
+                        <DetailRow label="Registered at" value={formatDate(device.registeredAtUtc)} />
+                        <DetailRow label="Latest temperature at" value={formatDate(device.latestTemperatureAtUtc)} />
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid size={{ xs: 12, lg: 8 }}>
                   <BatteryHistoryChart deviceId={device.id} />
                 </Grid>
                 <Grid size={{ xs: 12, lg: 4 }}>
@@ -879,24 +927,7 @@ export default function DeviceDetails() {
                   </Card>
                 </Grid>
 
-                <Grid size={{ xs: 12, lg: 6 }}>
-                  <Card variant="outlined" sx={{ height: '100%' }}>
-                    <CardContent>
-                      <Typography variant="h6" sx={{ mb: 2 }}>
-                        Latest sensor snapshot
-                      </Typography>
-                      <Stack direction="row" flexWrap="wrap" gap={2}>
-                        <DetailRow label="Temperature" value={formatValue(device.latestTemperatureCelsius, '°C')} />
-                        <DetailRow label="Last seen" value={formatDate(device.lastSeenAtUtc)} />
-                        <DetailRow label="Last discovered" value={formatDate(device.lastDiscoveredAtUtc)} />
-                        <DetailRow label="Registered at" value={formatDate(device.registeredAtUtc)} />
-                        <DetailRow label="Latest temperature at" value={formatDate(device.latestTemperatureAtUtc)} />
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                <Grid size={{ xs: 12, lg: 6 }}>
+                <Grid size={{ xs: 12 }}>
                   <Card variant="outlined" sx={{ height: '100%' }}>
                     <CardContent>
                       <Typography variant="h6" sx={{ mb: 2 }}>
@@ -1153,16 +1184,21 @@ export default function DeviceDetails() {
             <Stack spacing={2}>
               {logsError && <Alert severity="warning">{logsError}</Alert>}
               <Card variant="outlined">
-                <CardContent>
+                <CardContent sx={{ px: { xs: 1.5, sm: 3 } }}>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ mb: 2 }}>
                     <Typography variant="h6">Device log history</Typography>
-                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', md: 'center' }}>
+                    <Stack
+                      direction={{ xs: 'column', md: 'row' }}
+                      spacing={1}
+                      alignItems={{ xs: 'stretch', md: 'center' }}
+                      sx={{ width: { xs: '100%', sm: 'auto' } }}
+                    >
                       <Typography variant="body2" color="text.secondary">
                         Loaded {filteredLogEntries.length}
                         {logs?.totalCount != null ? ` of ${logs.totalCount.toLocaleString()}` : ''} matching log entries
                       </Typography>
                       {!isFollowingLogs && logEntries.length > 0 ? (
-                        <Button size="small" onClick={jumpToLatestLogs}>
+                        <Button size="small" onClick={jumpToLatestLogs} sx={{ width: { xs: '100%', md: 'auto' } }}>
                           Jump to latest
                         </Button>
                       ) : null}
@@ -1172,6 +1208,7 @@ export default function DeviceDetails() {
                         color="warning"
                         onClick={() => setRetentionDialogOpen(true)}
                         disabled={actionLoading}
+                        sx={{ width: { xs: '100%', md: 'auto' } }}
                       >
                         Delete old logs
                       </Button>
@@ -1181,6 +1218,7 @@ export default function DeviceDetails() {
                         color="error"
                         onClick={() => setPendingAction('delete-all-logs')}
                         disabled={actionLoading}
+                        sx={{ width: { xs: '100%', md: 'auto' } }}
                       >
                         Delete all logs
                       </Button>
@@ -1188,7 +1226,7 @@ export default function DeviceDetails() {
                   </Stack>
 
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
-                    <FormControl size="small" sx={{ minWidth: 160 }}>
+                    <FormControl size="small" sx={{ minWidth: { md: 160 }, width: { xs: '100%', md: 'auto' } }}>
                       <InputLabel id="log-severity-filter-label">Severity</InputLabel>
                       <Select
                         labelId="log-severity-filter-label"
@@ -1211,6 +1249,7 @@ export default function DeviceDetails() {
                       value={logFromTime}
                       onChange={(event) => setLogFromTime(event.target.value)}
                       InputLabelProps={{ shrink: true }}
+                      fullWidth
                     />
                     <TextField
                       label="To"
@@ -1219,6 +1258,7 @@ export default function DeviceDetails() {
                       value={logToTime}
                       onChange={(event) => setLogToTime(event.target.value)}
                       InputLabelProps={{ shrink: true }}
+                      fullWidth
                     />
                     <TextField
                       label="Search log line"
@@ -1234,7 +1274,7 @@ export default function DeviceDetails() {
                       size="small"
                       onClick={() => void loadOlderLogs()}
                       disabled={olderLogsLoading}
-                      sx={{ mb: 1.5 }}
+                      sx={{ mb: 1.5, width: { xs: '100%', sm: 'auto' } }}
                     >
                       {olderLogsLoading ? 'Loading...' : 'Load older matching logs'}
                     </Button>
@@ -1250,8 +1290,8 @@ export default function DeviceDetails() {
                         ref={logsContainerRef}
                         onScroll={handleLogsScroll}
                         sx={{
-                          height: 'calc(100vh - 420px)',
-                          minHeight: 320,
+                          height: { xs: '62vh', sm: 'calc(100vh - 420px)' },
+                          minHeight: { xs: 380, sm: 320 },
                           overflowY: 'auto',
                           border: 1,
                           borderColor: 'divider',
@@ -1261,9 +1301,8 @@ export default function DeviceDetails() {
                       >
                         <Box
                           sx={{
-                            display: 'grid',
+                            display: { xs: 'none', sm: 'grid' },
                             gridTemplateColumns: {
-                              xs: 'minmax(120px, 140px) minmax(72px, 96px) minmax(0, 1fr)',
                               sm: 'minmax(180px, 200px) minmax(88px, 110px) minmax(0, 1fr)',
                             },
                             gap: 2,
@@ -1292,14 +1331,14 @@ export default function DeviceDetails() {
                           <Box
                             key={entry.id}
                             sx={{
-                              display: 'grid',
+                              display: { xs: 'flex', sm: 'grid' },
+                              flexDirection: { xs: 'column' },
                               gridTemplateColumns: {
-                                xs: 'minmax(120px, 140px) minmax(72px, 96px) minmax(0, 1fr)',
                                 sm: 'minmax(180px, 200px) minmax(88px, 110px) minmax(0, 1fr)',
                               },
-                              gap: 2,
-                              px: 2,
-                              py: 1,
+                              gap: { xs: 1, sm: 2 },
+                              px: { xs: 1.5, sm: 2 },
+                              py: { xs: 1.5, sm: 1 },
                               borderBottom: 1,
                               borderColor: 'divider',
                               alignItems: 'start',
@@ -1308,7 +1347,33 @@ export default function DeviceDetails() {
                               },
                             }}
                           >
-                            <Typography variant="body2" color="text.secondary" sx={{ pt: 0.25 }}>
+                            <Stack
+                              direction="row"
+                              spacing={1}
+                              justifyContent="space-between"
+                              alignItems="center"
+                              sx={{ display: { xs: 'flex', sm: 'none' } }}
+                            >
+                              <Typography variant="caption" color="text.secondary">
+                                {new Date(entry.timestampUtc).toLocaleString()}
+                              </Typography>
+                              <Chip
+                                label={entry.level ?? 'unknown'}
+                                size="small"
+                                color={
+                                  entry.level?.toLowerCase() === 'error'
+                                    ? 'error'
+                                    : entry.level?.toLowerCase() === 'warning'
+                                      ? 'warning'
+                                      : 'default'
+                                }
+                              />
+                            </Stack>
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ pt: 0.25, display: { xs: 'none', sm: 'block' } }}
+                            >
                               {new Date(entry.timestampUtc).toLocaleString()}
                             </Typography>
                             <Chip
@@ -1321,9 +1386,18 @@ export default function DeviceDetails() {
                                     ? 'warning'
                                     : 'default'
                               }
-                              sx={{ justifySelf: 'start' }}
+                              sx={{ justifySelf: 'start', display: { xs: 'none', sm: 'inline-flex' } }}
                             />
-                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                fontFamily: { xs: 'monospace', sm: 'inherit' },
+                                fontSize: { xs: '0.78rem', sm: '0.875rem' },
+                                lineHeight: { xs: 1.55, sm: 1.43 },
+                              }}
+                            >
                               {entry.message}
                             </Typography>
                           </Box>

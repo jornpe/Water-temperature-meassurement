@@ -21,6 +21,8 @@ public class DevicesController(
     private const int MaxLogsPageSize = 200;
     private const int DefaultPositionHistoryPoints = 5_000;
     private const int MaxPositionHistoryPoints = 10_000;
+    private const int DefaultTemperatureHistoryPoints = 1_500;
+    private const int MaxTemperatureHistoryPoints = 5_000;
     private const int DefaultBatteryHistoryPoints = 1_500;
     private const int MaxBatteryHistoryPoints = 5_000;
     private static readonly Regex HomeAssistantDeviceNameRegex = new(
@@ -299,6 +301,88 @@ public class DevicesController(
         }
 
         return Ok(new DeviceBatteryHistoryResponse(
+            device.Id,
+            device.DeviceIdentifier,
+            normalizedFromUtc,
+            normalizedToUtc,
+            totalCount,
+            sampleStride > 1,
+            items));
+    }
+
+    [HttpGet("{id:int}/temperature-history")]
+    public async Task<ActionResult<DeviceTemperatureHistoryResponse>> GetDeviceTemperatureHistory(
+        int id,
+        [FromQuery] DateTime? fromUtc = null,
+        [FromQuery] DateTime? toUtc = null,
+        [FromQuery] int maxPoints = DefaultTemperatureHistoryPoints,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedToUtc = toUtc.HasValue ? NormalizeUtc(toUtc.Value) : DateTime.UtcNow;
+        var normalizedFromUtc = fromUtc.HasValue
+            ? NormalizeUtc(fromUtc.Value)
+            : normalizedToUtc.AddDays(-1);
+
+        if (normalizedFromUtc > normalizedToUtc)
+        {
+            return BadRequest(new MessageResponse("The temperature-history start time must be earlier than the end time"));
+        }
+
+        var device = await dbContext.Devices
+            .AsNoTracking()
+            .Where(item => item.Id == id)
+            .Select(item => new { item.Id, item.DeviceIdentifier })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (device is null)
+        {
+            return NotFound();
+        }
+
+        var normalizedMaxPoints = Math.Clamp(maxPoints, 100, MaxTemperatureHistoryPoints);
+        var query = dbContext.DeviceTemperatureHistory
+            .AsNoTracking()
+            .Where(item => item.DeviceId == id
+                && item.RecordedAtUtc >= normalizedFromUtc
+                && item.RecordedAtUtc <= normalizedToUtc);
+
+        var totalCount = await query.LongCountAsync(cancellationToken);
+        var sampleStride = Math.Max(1L, (long)Math.Ceiling(totalCount / (double)normalizedMaxPoints));
+        var items = new List<DeviceTemperatureHistoryPointResponse>(
+            (int)Math.Min(totalCount, normalizedMaxPoints));
+        DeviceTemperatureHistory? lastEntry = null;
+        long index = 0;
+
+        await foreach (var entry in query
+            .OrderBy(item => item.RecordedAtUtc)
+            .ThenBy(item => item.Id)
+            .AsAsyncEnumerable()
+            .WithCancellation(cancellationToken))
+        {
+            lastEntry = entry;
+
+            if (index % sampleStride == 0)
+            {
+                items.Add(ToTemperatureHistoryResponse(entry));
+            }
+
+            index += 1;
+        }
+
+        if (lastEntry is not null && (items.Count == 0 || items[^1].Id != lastEntry.Id))
+        {
+            var lastResponse = ToTemperatureHistoryResponse(lastEntry);
+            if (items.Count >= normalizedMaxPoints)
+            {
+                items[^1] = lastResponse;
+            }
+            else
+            {
+                items.Add(lastResponse);
+            }
+        }
+
+        return Ok(new DeviceTemperatureHistoryResponse(
             device.Id,
             device.DeviceIdentifier,
             normalizedFromUtc,
@@ -783,6 +867,14 @@ public class DevicesController(
             entry.Percentage,
             entry.ModemMillivolts,
             entry.AdcVoltage,
+            entry.RecordedAtUtc);
+    }
+
+    private static DeviceTemperatureHistoryPointResponse ToTemperatureHistoryResponse(DeviceTemperatureHistory entry)
+    {
+        return new DeviceTemperatureHistoryPointResponse(
+            entry.Id,
+            entry.TemperatureCelsius,
             entry.RecordedAtUtc);
     }
 

@@ -122,6 +122,33 @@ public class DevicesControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDeviceTemperatureHistory_FiltersAndReturnsReadingsChronologically()
+    {
+        var device = new Device { DeviceIdentifier = "device-1", Status = DeviceRegistrationStatus.Registered };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var now = DateTime.UtcNow;
+        _dbContext.DeviceTemperatureHistory.AddRange(
+            new DeviceTemperatureHistory { DeviceId = device.Id, TemperatureCelsius = 8.4m, RecordedAtUtc = now.AddHours(-3) },
+            new DeviceTemperatureHistory { DeviceId = device.Id, TemperatureCelsius = 8.7m, RecordedAtUtc = now.AddHours(-2) },
+            new DeviceTemperatureHistory { DeviceId = device.Id, TemperatureCelsius = 9.1m, RecordedAtUtc = now.AddHours(-1) });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetDeviceTemperatureHistory(
+            device.Id,
+            fromUtc: now.AddHours(-2.5),
+            toUtc: now.AddMinutes(-30));
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<DeviceTemperatureHistoryResponse>(okResult.Value);
+
+        Assert.Equal(2, response.TotalCount);
+        Assert.False(response.IsSampled);
+        Assert.Equal([8.7m, 9.1m], response.Items.Select(item => item.TemperatureCelsius).ToArray());
+    }
+
+    [Fact]
     public async Task GetBatteryHistory_WithReversedRange_ReturnsBadRequest()
     {
         var now = DateTime.UtcNow;

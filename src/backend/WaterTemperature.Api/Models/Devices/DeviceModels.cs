@@ -72,6 +72,20 @@ public record DevicePositionHistoryResponse(
     bool IsSampled,
     IReadOnlyList<DevicePositionHistoryPointResponse> Items);
 
+public record DeviceTemperatureHistoryPointResponse(
+    long Id,
+    decimal TemperatureCelsius,
+    DateTime RecordedAtUtc);
+
+public record DeviceTemperatureHistoryResponse(
+    int DeviceId,
+    string DeviceIdentifier,
+    DateTime? FromUtc,
+    DateTime? ToUtc,
+    long TotalCount,
+    bool IsSampled,
+    IReadOnlyList<DeviceTemperatureHistoryPointResponse> Items);
+
 public record DeviceWifiDiagnosticsResponse(
     string? LocalIp,
     int? WifiRssiDbm,
