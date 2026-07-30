@@ -7,6 +7,7 @@
 #include <TinyGsmClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <esp_sleep.h>
 
 // ============================================================================
 // LILYGO T-SIM7000G hardware
@@ -23,7 +24,10 @@ constexpr uint32_t MODEM_BAUD_RATE = 115200;
 constexpr uint8_t SIM7000_NETWORK_MODE_LTE_ONLY = 38;
 constexpr uint8_t SIM7000_PREFERRED_MODE_CAT_M = 1;
 constexpr uint32_t DEFAULT_REPORT_INTERVAL_SECONDS = 30;
-constexpr uint32_t DISCOVERY_INTERVAL_MS = 30000;
+constexpr uint32_t DISCOVERY_INTERVAL_MS = 10000;
+constexpr uint32_t POST_DISCOVERY_SLEEP_SECONDS = 10;
+constexpr float BATTERY_EMPTY_VOLTAGE = 2.5687F;
+constexpr float BATTERY_FULL_VOLTAGE = 3.5627F;
 constexpr size_t MAX_LOGS_PER_UPDATE = 1000;
 constexpr size_t MAX_LOG_MESSAGE_LENGTH = 200;
 
@@ -769,7 +773,7 @@ bool connectNetwork()
     {
         return true;
     }
-    
+
     if (config.cellular.enabled && connectCellular())
     {
         return true;
@@ -1095,8 +1099,6 @@ void runDiscoveryMode(const uint32_t now)
 
 void runOperationalMode(const uint32_t now)
 {
-    const uint32_t reportIntervalMs = reportIntervalSeconds * 1000UL;
-
     lastUpdateAttemptMs = now;
 
     const String endpoint = buildApiPath(String("/api/devices/") + deviceId + "/updates");
@@ -1176,6 +1178,26 @@ float readBatteryVoltage()
     return (adcMillivolts * 2.0F) / 1000.0F;
 }
 
+int8_t calculateBatteryPercentage(const float voltage)
+{
+    if (voltage <= BATTERY_EMPTY_VOLTAGE)
+    {
+        return 0;
+    }
+
+    if (voltage >= BATTERY_FULL_VOLTAGE)
+    {
+        return 100;
+    }
+
+    const float percentage =
+        ((voltage - BATTERY_EMPTY_VOLTAGE)
+            / (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE))
+        * 100.0F;
+
+    return static_cast<int8_t>(roundf(percentage));
+}
+
 void readBatteryStatus()
 {
     BatteryStatus status{
@@ -1193,6 +1215,8 @@ void readBatteryStatus()
     );
 
     status.batteryState = static_cast<BatteryState>(status.chargeState);
+
+    status.percentage = calculateBatteryPercentage(status.adcVoltage);
 
     logInfo(
         "Battery status: "
@@ -1287,9 +1311,51 @@ void readTemperature()
     logInfo("Temperature: " + String(temperatureCelsius, 2) + " C");
 }
 
+[[noreturn]] void enterDeepSleep(uint32_t sleepSeconds)
+{
+    if (sleepSeconds == 0)
+    {
+        sleepSeconds = DEFAULT_REPORT_INTERVAL_SECONDS;
+    }
+
+    logInfo("Entering deep sleep for " + String(sleepSeconds) + " seconds.");
+
+    cellularClient.stop();
+    wifiClient.stop();
+
+    if (gpsReady)
+    {
+        modem.disableGPS();
+        gpsReady = false;
+    }
+
+    if (activeTransport == NetworkTransport::Cellular && modem.isGprsConnected())
+    {
+        modem.gprsDisconnect();
+    }
+
+    if (modemReady)
+    {
+        modem.poweroff();
+        modemReady = false;
+    }
+
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+
+    esp_sleep_enable_timer_wakeup(
+        static_cast<uint64_t>(sleepSeconds) * 1000000ULL);
+
+    Serial.flush();
+    esp_deep_sleep_start();
+}
+
 void setup()
 {
     Serial.begin(115200);
+
+    // Read the battery before initializing or powering up other peripherals.
+    readBatteryStatus();
     delay(1000);
 
     Serial.println();
@@ -1304,44 +1370,72 @@ void setup()
     logInfo("Device ID: " + deviceId);
 
     loadPersistedDeviceState();
-    initializeTemperatureSensor();
 
     logInfo("Loaded device mode: " + String(deviceModeName()));
     logInfo("Report interval: " + String(reportIntervalSeconds) + " seconds");
     logInfo("Applied configuration version: " + String(appliedConfigurationVersion));
 
+    initializeTemperatureSensor();
+    readTemperature();
+
     connectNetwork();
+    
     ensureGpsReady();
+    pollGps();
+
+    if (deviceMode == DeviceMode::Discovery)
+    {
+        logInfo("Running in discovery mode.");
+        return;
+    }
+
+    logInfo("Running in operational mode.");
+    runOperationalMode(millis());
+
+    if (deviceMode == DeviceMode::Operational)
+    {
+        enterDeepSleep(reportIntervalSeconds);
+    }
+
+    logInfo("Returning to discovery mode.");
 }
 
 void loop()
 {
-    readBatteryStatus();
-    readTemperature();
-    ensureNetworkConnection();
-    ensureGpsReady();
-    pollGps();
-
     const uint32_t now = millis();
 
-    if (!networkIsConnected())
+    if (deviceMode != DeviceMode::Discovery)
+    {
+        enterDeepSleep(reportIntervalSeconds);
+    }
+
+    if (!intervalElapsed(now, lastDiscoveryAttemptMs, DISCOVERY_INTERVAL_MS))
     {
         delay(10);
         return;
     }
 
-    if (deviceMode == DeviceMode::Discovery)
+    lastDiscoveryAttemptMs = now;
+    ensureNetworkConnection();
+
+    if (!networkIsConnected())
     {
-        logInfo("Running in discovery mode.");
-        runDiscoveryMode(now);
-    }
-    else
-    {
-        logInfo("Running in operational mode.");
-        runOperationalMode(now);
+        return;
     }
 
-    const uint32_t reportIntervalMs = reportIntervalSeconds * 1000UL;
+    logInfo("Requesting an API key in discovery mode.");
+    runDiscoveryMode(millis());
 
-    delay(reportIntervalMs);
+    if (deviceMode != DeviceMode::Operational)
+    {
+        return;
+    }
+
+    logInfo("API key received; sending the latest readings and logs.");
+    runOperationalMode(millis());
+
+    if (deviceMode == DeviceMode::Operational)
+    {
+        enterDeepSleep(POST_DISCOVERY_SLEEP_SECONDS);
+    }
 }
