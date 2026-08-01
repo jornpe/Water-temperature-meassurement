@@ -203,6 +203,8 @@ export interface DeviceDetail {
   homeAssistantDeviceName: string
   firmwareVersion?: string | null
   reportIntervalSeconds: number
+  batteryFullAdcVoltage: number
+  batteryEmptyAdcVoltage: number
   createdAtUtc: string
   registeredAtUtc?: string | null
   lastDiscoveredAtUtc?: string | null
@@ -225,6 +227,8 @@ export interface RegisterDeviceData {
   name: string
   place: string
   reportIntervalSeconds: number
+  batteryFullAdcVoltage: number
+  batteryEmptyAdcVoltage: number
   pushToHomeAssistant: boolean
   homeAssistantDeviceName?: string | null
 }
@@ -248,6 +252,8 @@ export interface UpdateRegisteredDeviceData {
   name: string
   place: string
   reportIntervalSeconds: number
+  batteryFullAdcVoltage: number
+  batteryEmptyAdcVoltage: number
   pushToHomeAssistant: boolean
   homeAssistantDeviceName?: string | null
 }

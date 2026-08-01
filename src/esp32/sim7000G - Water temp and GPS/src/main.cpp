@@ -27,8 +27,6 @@ constexpr uint32_t DEFAULT_REPORT_INTERVAL_SECONDS = 30;
 constexpr uint32_t DISCOVERY_INTERVAL_MS = 10000;
 constexpr uint32_t POST_DISCOVERY_SLEEP_SECONDS = 10;
 constexpr uint8_t MAX_CONFIGURATION_SYNC_ATTEMPTS = 3;
-constexpr float BATTERY_EMPTY_VOLTAGE = 2.5687F;
-constexpr float BATTERY_FULL_VOLTAGE = 3.5627F;
 constexpr size_t MAX_LOGS_PER_UPDATE = 1000;
 constexpr size_t MAX_LOG_MESSAGE_LENGTH = 200;
 
@@ -188,7 +186,6 @@ struct BatteryStatus
     bool modemReadingValid;
     int8_t chargeState;
     BatteryState batteryState;
-    int8_t percentage;
     int16_t modemMillivolts;
     float adcVoltage;
 };
@@ -843,7 +840,6 @@ String buildUpdatePayload(const uint32_t now)
     battery["modemReadingValid"] = latestBatteryStatus.modemReadingValid;
     battery["chargeState"] = latestBatteryStatus.chargeState;
     battery["batteryState"] = static_cast<int8_t>(latestBatteryStatus.batteryState);
-    battery["percentage"] = latestBatteryStatus.percentage;
     battery["modemMillivolts"] = latestBatteryStatus.modemMillivolts;
     battery["adcVoltage"] = latestBatteryStatus.adcVoltage;
 
@@ -1409,45 +1405,20 @@ float readBatteryVoltage()
     return (adcMillivolts * 2.0F) / 1000.0F;
 }
 
-int8_t calculateBatteryPercentage(const float voltage)
-{
-    if (voltage <= BATTERY_EMPTY_VOLTAGE)
-    {
-        return 0;
-    }
-
-    if (voltage >= BATTERY_FULL_VOLTAGE)
-    {
-        return 100;
-    }
-
-    const float percentage =
-        ((voltage - BATTERY_EMPTY_VOLTAGE)
-            / (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE))
-        * 100.0F;
-
-    return static_cast<int8_t>(roundf(percentage));
-}
-
 void readBatteryStatus()
 {
     BatteryStatus status{
         .modemReadingValid = false,
         .chargeState = -1,
-        .percentage = -1,
         .modemMillivolts = 0,
         .adcVoltage = readBatteryVoltage()
     };
 
-    status.modemReadingValid = modem.getBattStats(
-        status.chargeState,
-        status.percentage,
-        status.modemMillivolts
-    );
+    status.modemMillivolts = modem.getBattVoltage();
+    status.chargeState = modem.getBattChargeState();
+    status.modemReadingValid = status.modemMillivolts > 0;
 
     status.batteryState = static_cast<BatteryState>(status.chargeState);
-
-    status.percentage = calculateBatteryPercentage(status.adcVoltage);
 
     logInfo(
         "Battery status: "
@@ -1455,8 +1426,6 @@ void readBatteryStatus()
         + " V (ADC), "
         + String(status.modemMillivolts / 1000.0F, 2)
         + " V (modem), "
-        + String(status.percentage)
-        + "%, "
         + (status.batteryState == BatteryState::Charging ? "charging" :
             status.batteryState == BatteryState::Full ? "full" :
             status.batteryState == BatteryState::NotCharging ? "not charging" : "unknown"));

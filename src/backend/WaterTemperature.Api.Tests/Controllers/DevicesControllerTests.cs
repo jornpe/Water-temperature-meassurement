@@ -38,7 +38,9 @@ public class DevicesControllerTests : IDisposable
         {
             DeviceIdentifier = "device-1",
             Status = DeviceRegistrationStatus.Registered,
-            LatestBatteryPercentage = 74,
+            BatteryFullAdcVoltage = 4F,
+            BatteryEmptyAdcVoltage = 2F,
+            LatestBatteryAdcVoltage = 3.5F,
             LatestBatteryChargeState = 1,
             LatestBatteryState = BatteryState.Charging,
             LatestBatteryAtUtc = DateTime.UtcNow,
@@ -51,7 +53,7 @@ public class DevicesControllerTests : IDisposable
         var response = Assert.IsAssignableFrom<IEnumerable<DeviceSummaryResponse>>(okResult.Value);
         var device = Assert.Single(response);
 
-        Assert.Equal(74, device.LatestBatteryPercentage);
+        Assert.Equal(75, device.LatestBatteryPercentage);
         Assert.Equal("Charging", device.LatestBatteryStatus);
         Assert.NotNull(device.LatestBatteryAtUtc);
     }
@@ -98,7 +100,6 @@ public class DevicesControllerTests : IDisposable
                 ModemReadingValid = true,
                 ChargeState = 0,
                 BatteryState = BatteryState.NotCharging,
-                Percentage = index % 101,
                 ModemMillivolts = 3_700 + index,
                 AdcVoltage = 3.7f,
                 RecordedAtUtc = fromUtc.AddMinutes(index),
@@ -119,6 +120,59 @@ public class DevicesControllerTests : IDisposable
         Assert.True(response.IsSampled);
         Assert.InRange(response.Items.Count, 2, 100);
         Assert.Equal(fromUtc.AddMinutes(204), response.Items[^1].RecordedAtUtc);
+    }
+
+    [Fact]
+    public async Task GetDeviceBatteryHistory_CalculatesPercentagesFromCurrentConfiguration()
+    {
+        var device = new Device
+        {
+            DeviceIdentifier = "device-1",
+            Status = DeviceRegistrationStatus.Registered,
+            BatteryFullAdcVoltage = 4F,
+            BatteryEmptyAdcVoltage = 2F,
+        };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var fromUtc = DateTime.UtcNow.AddMinutes(-5);
+        _dbContext.DeviceBatteryHistory.AddRange(
+            new DeviceBatteryHistory
+            {
+                DeviceId = device.Id,
+                BatteryState = BatteryState.NotCharging,
+                AdcVoltage = 2.5F,
+                RecordedAtUtc = fromUtc.AddMinutes(1),
+            },
+            new DeviceBatteryHistory
+            {
+                DeviceId = device.Id,
+                BatteryState = BatteryState.NotCharging,
+                AdcVoltage = 4.5F,
+                RecordedAtUtc = fromUtc.AddMinutes(2),
+            });
+        await _dbContext.SaveChangesAsync();
+
+        var firstResult = await _controller.GetDeviceBatteryHistory(
+            device.Id,
+            fromUtc,
+            fromUtc.AddMinutes(3));
+        var firstResponse = Assert.IsType<DeviceBatteryHistoryResponse>(
+            Assert.IsType<OkObjectResult>(firstResult.Result).Value);
+
+        Assert.Equal([25, 100], firstResponse.Items.Select(item => item.Percentage).ToArray());
+
+        device.BatteryFullAdcVoltage = 5F;
+        await _dbContext.SaveChangesAsync();
+
+        var recalculatedResult = await _controller.GetDeviceBatteryHistory(
+            device.Id,
+            fromUtc,
+            fromUtc.AddMinutes(3));
+        var recalculatedResponse = Assert.IsType<DeviceBatteryHistoryResponse>(
+            Assert.IsType<OkObjectResult>(recalculatedResult.Result).Value);
+
+        Assert.Equal([17, 83], recalculatedResponse.Items.Select(item => item.Percentage).ToArray());
     }
 
     [Fact]
@@ -178,6 +232,8 @@ public class DevicesControllerTests : IDisposable
         Assert.True(storedDevice.PushToHomeAssistant);
         Assert.Equal("Pool Sensor HA", storedDevice.HomeAssistantDeviceName);
         Assert.Equal(120, storedDevice.ReportIntervalSeconds);
+        Assert.Equal(BatteryPercentageCalculator.DefaultFullAdcVoltage, storedDevice.BatteryFullAdcVoltage);
+        Assert.Equal(BatteryPercentageCalculator.DefaultEmptyAdcVoltage, storedDevice.BatteryEmptyAdcVoltage);
         Assert.Equal(1, storedDevice.DesiredConfigurationVersion);
         Assert.NotNull(storedDevice.DesiredConfigurationUpdatedAtUtc);
         Assert.False(string.IsNullOrWhiteSpace(storedDevice.ApiKeyHash));
@@ -222,6 +278,40 @@ public class DevicesControllerTests : IDisposable
         Assert.Equal("pending", response.ConfigurationSync.Status);
         Assert.Equal(0, response.ConfigurationSync.AttemptCount);
         Assert.Null(response.ConfigurationSync.Error);
+    }
+
+    [Fact]
+    public async Task UpdateDevice_BatteryVoltageChange_RecalculatesLatestWithoutDeviceSyncVersionChange()
+    {
+        var device = new Device
+        {
+            DeviceIdentifier = "device-1",
+            Status = DeviceRegistrationStatus.Registered,
+            Name = "Pool Sensor",
+            Place = "Pool",
+            ReportIntervalSeconds = 120,
+            DesiredConfigurationVersion = 3,
+            LatestBatteryAdcVoltage = 3F,
+        };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.UpdateDevice(
+            device.Id,
+            new RegisteredDeviceUpdateRequest(
+                "Pool Sensor",
+                "Pool",
+                120,
+                BatteryFullAdcVoltage: 4F,
+                BatteryEmptyAdcVoltage: 2F));
+
+        var response = Assert.IsType<DeviceDetailResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        var storedDevice = await _dbContext.Devices.SingleAsync();
+
+        Assert.Equal(3, storedDevice.DesiredConfigurationVersion);
+        Assert.Equal(4F, response.BatteryFullAdcVoltage);
+        Assert.Equal(2F, response.BatteryEmptyAdcVoltage);
+        Assert.Equal(50, response.Battery.Percentage);
     }
 
     [Fact]

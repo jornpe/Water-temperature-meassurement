@@ -575,7 +575,13 @@ public class HomeAssistantMqttSyncService : BackgroundService, IHomeAssistantMqt
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "cellular-signal-quality"), FormatNumber(device.LatestCellularSignalQuality));
         
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-state"), device.LatestBatteryState.ToString());
-        AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-percentage"), FormatNumber(device.LatestBatteryPercentage));
+        AddIfPresent(
+            messages,
+            GetStateTopic(device.DeviceIdentifier, "battery-percentage"),
+            FormatNumber(BatteryPercentageCalculator.Calculate(
+                device.LatestBatteryAdcVoltage,
+                device.BatteryFullAdcVoltage,
+                device.BatteryEmptyAdcVoltage)));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-adc-voltage"), FormatNumber(device.LatestBatteryAdcVoltage));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-modem-millivoltage"), FormatNumber(device.LatestBatteryModemMillivolts));
         AddIfPresent(messages, GetStateTopic(device.DeviceIdentifier, "battery-recorded-time"), FormatTimestamp(device.LatestBatteryAtUtc));

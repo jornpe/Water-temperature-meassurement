@@ -155,6 +155,8 @@ public record DeviceDetailResponse(
     string HomeAssistantDeviceName,
     string? FirmwareVersion,
     int ReportIntervalSeconds,
+    float BatteryFullAdcVoltage,
+    float BatteryEmptyAdcVoltage,
     DateTime CreatedAtUtc,
     DateTime? RegisteredAtUtc,
     DateTime? LastDiscoveredAtUtc,
@@ -177,7 +179,9 @@ public record DeviceRegistrationRequest(
     string Place,
     int ReportIntervalSeconds,
     bool PushToHomeAssistant = false,
-    string? HomeAssistantDeviceName = null);
+    string? HomeAssistantDeviceName = null,
+    float BatteryFullAdcVoltage = BatteryPercentageCalculator.DefaultFullAdcVoltage,
+    float BatteryEmptyAdcVoltage = BatteryPercentageCalculator.DefaultEmptyAdcVoltage);
 
 public record DeviceRegistrationResponse(
     int Id,
@@ -197,7 +201,9 @@ public record RegisteredDeviceUpdateRequest(
     string Place,
     int ReportIntervalSeconds,
     bool PushToHomeAssistant = false,
-    string? HomeAssistantDeviceName = null);
+    string? HomeAssistantDeviceName = null,
+    float BatteryFullAdcVoltage = BatteryPercentageCalculator.DefaultFullAdcVoltage,
+    float BatteryEmptyAdcVoltage = BatteryPercentageCalculator.DefaultEmptyAdcVoltage);
 
 public record DeviceLogEntryRequest(
     long TimestampMs,
@@ -278,7 +284,6 @@ public record Battery(
     bool ModemReadingValid,
     int ChargeState,
     BatteryState BatteryState,
-    int Percentage,
     int ModemMillivolts,
     float AdcVoltage);
 

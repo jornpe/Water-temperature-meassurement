@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using WaterTemperature.Api.Models.Devices;
 
 namespace WaterTemperature.Api.Data;
 
@@ -37,6 +38,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(device => device.PendingApiKeyProtected).HasMaxLength(1024);
             entity.Property(device => device.ConfigurationSyncStatus).HasConversion<string>().HasMaxLength(32);
             entity.Property(device => device.ConfigurationSyncError).HasMaxLength(512);
+            entity.Property(device => device.BatteryFullAdcVoltage)
+                .HasDefaultValue(BatteryPercentageCalculator.DefaultFullAdcVoltage);
+            entity.Property(device => device.BatteryEmptyAdcVoltage)
+                .HasDefaultValue(BatteryPercentageCalculator.DefaultEmptyAdcVoltage);
             entity.Property(device => device.LatestNetworkTransport).HasMaxLength(32);
             entity.Property(device => device.LatestWifiLocalIp).HasMaxLength(64);
             entity.Property(device => device.LatestWifiSsid).HasMaxLength(128);
@@ -70,6 +75,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.Property(device => device.LatestBatteryState).HasConversion<string>().HasMaxLength(32);
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_Devices_BatteryAdcVoltageRange",
+                "\"BatteryEmptyAdcVoltage\" >= 0 AND \"BatteryFullAdcVoltage\" > \"BatteryEmptyAdcVoltage\""));
         });
 
         modelBuilder.Entity<HomeAssistantIntegrationSettings>(entity =>

@@ -74,7 +74,7 @@ public class DeviceUpdatesControllerTests : IDisposable
             "1.0.1",
             21.75m,
             new DevicePositionUpdateRequest(52.1, 4.3, 5.5, DateTime.UtcNow, 2.4, 0.8, 10, 7),
-            new Battery(true, 0, BatteryState.Unknown, 50, 1000, 1000),
+            new Battery(true, 0, BatteryState.Unknown, 3_700, 3.7F),
             new DeviceNetworkDiagnosticsUpdateRequest(
                 "wifi",
                 new DeviceWifiDiagnosticsUpdateRequest("192.168.0.10", -55, "ssid", "bssid", 11, "192.168.0.1", "255.255.255.0", "8.8.8.8", "aa:bb:cc:dd:ee:ff"),
@@ -91,9 +91,12 @@ public class DeviceUpdatesControllerTests : IDisposable
         Assert.Equal(52.1, device.LatestLatitude);
         Assert.Equal("wifi", device.LatestNetworkTransport);
         Assert.Equal("ssid", device.LatestWifiSsid);
+        Assert.Equal(3.7F, device.LatestBatteryAdcVoltage);
         Assert.Null(device.PendingApiKeyProtected);
         Assert.Single(_dbContext.DeviceTemperatureHistory);
         Assert.Single(_dbContext.DevicePositionHistory);
+        var batteryHistory = Assert.Single(_dbContext.DeviceBatteryHistory);
+        Assert.Equal(3.7F, batteryHistory.AdcVoltage);
     }
 
     [Fact]

@@ -26,6 +26,8 @@ public class Device
     public string? HomeAssistantDeviceName { get; set; }
 
     public int ReportIntervalSeconds { get; set; } = 30;
+    public float BatteryFullAdcVoltage { get; set; } = BatteryPercentageCalculator.DefaultFullAdcVoltage;
+    public float BatteryEmptyAdcVoltage { get; set; } = BatteryPercentageCalculator.DefaultEmptyAdcVoltage;
     public int DesiredConfigurationVersion { get; set; } = 1;
     public DateTime? DesiredConfigurationUpdatedAtUtc { get; set; }
     public int? ReportedConfigurationVersion { get; set; }
@@ -118,7 +120,6 @@ public class Device
     public bool? LatestBatteryModemReadingValid { get; set; }
     public int? LatestBatteryChargeState { get; set; }
     public BatteryState? LatestBatteryState { get; set; }
-    public int? LatestBatteryPercentage { get; set; }
     public int? LatestBatteryModemMillivolts { get; set; }
     public float? LatestBatteryAdcVoltage { get; set; }
     public DateTime? LatestBatteryAtUtc { get; set; }

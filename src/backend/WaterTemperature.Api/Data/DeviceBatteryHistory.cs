@@ -14,7 +14,6 @@ public class DeviceBatteryHistory
     public bool ModemReadingValid { get; set; }
     public int ChargeState { get; set; }
     public BatteryState BatteryState { get; set; }
-    public int Percentage { get; set; }
     public int ModemMillivolts { get; set; }
     public float AdcVoltage { get; set; }
 

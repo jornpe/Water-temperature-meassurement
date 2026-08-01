@@ -138,6 +138,27 @@ public class HomeAssistantMqttSyncServiceTests
         Assert.Equal(4.3, locationDocument.RootElement.GetProperty("longitude").GetDouble());
     }
 
+    [Fact]
+    public void BuildStateMessages_CalculatesBatteryPercentageFromAdcConfiguration()
+    {
+        using var provider = CreateServiceProvider();
+        var service = CreateService(provider);
+        var device = new Device
+        {
+            DeviceIdentifier = "device-1",
+            BatteryFullAdcVoltage = 4F,
+            BatteryEmptyAdcVoltage = 2F,
+            LatestBatteryAdcVoltage = 3.5F,
+        };
+
+        var messages = service.BuildStateMessages(device);
+
+        Assert.Contains(
+            messages,
+            message => message.Topic == "water-temperature/devices/device-1/battery-percentage/state"
+                && message.Payload == "75");
+    }
+
     private static ServiceProvider CreateServiceProvider()
     {
         var services = new ServiceCollection();

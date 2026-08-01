@@ -106,6 +106,8 @@ export default function DeviceDetails() {
   const [name, setName] = useState('')
   const [place, setPlace] = useState('')
   const [reportIntervalSeconds, setReportIntervalSeconds] = useState('30')
+  const [batteryFullAdcVoltage, setBatteryFullAdcVoltage] = useState('4.2')
+  const [batteryEmptyAdcVoltage, setBatteryEmptyAdcVoltage] = useState('2.5')
   const [pushToHomeAssistant, setPushToHomeAssistant] = useState(false)
   const [homeAssistantDeviceName, setHomeAssistantDeviceName] = useState('')
   const [homeAssistantDeviceNameError, setHomeAssistantDeviceNameError] = useState<string | null>(null)
@@ -113,6 +115,8 @@ export default function DeviceDetails() {
     name: string
     place: string
     reportIntervalSeconds: string
+    batteryFullAdcVoltage: string
+    batteryEmptyAdcVoltage: string
     pushToHomeAssistant: boolean
     homeAssistantDeviceName: string
   } | null>(null)
@@ -171,12 +175,16 @@ export default function DeviceDetails() {
     const nextName = device.name || ''
     const nextPlace = device.place || ''
     const nextReportIntervalSeconds = String(device.reportIntervalSeconds || 30)
+    const nextBatteryFullAdcVoltage = String(device.batteryFullAdcVoltage)
+    const nextBatteryEmptyAdcVoltage = String(device.batteryEmptyAdcVoltage)
     const nextHomeAssistantDeviceName =
       device.homeAssistantDeviceName === (device.name || device.deviceId) ? '' : device.homeAssistantDeviceName || ''
 
     setName(nextName)
     setPlace(nextPlace)
     setReportIntervalSeconds(nextReportIntervalSeconds)
+    setBatteryFullAdcVoltage(nextBatteryFullAdcVoltage)
+    setBatteryEmptyAdcVoltage(nextBatteryEmptyAdcVoltage)
     setPushToHomeAssistant(device.pushToHomeAssistant)
     setHomeAssistantDeviceName(nextHomeAssistantDeviceName)
     setHomeAssistantDeviceNameError(null)
@@ -184,6 +192,8 @@ export default function DeviceDetails() {
       name: nextName,
       place: nextPlace,
       reportIntervalSeconds: nextReportIntervalSeconds,
+      batteryFullAdcVoltage: nextBatteryFullAdcVoltage,
+      batteryEmptyAdcVoltage: nextBatteryEmptyAdcVoltage,
       pushToHomeAssistant: device.pushToHomeAssistant,
       homeAssistantDeviceName: nextHomeAssistantDeviceName,
     })
@@ -601,14 +611,34 @@ export default function DeviceDetails() {
     (name !== savedConfiguration.name ||
       place !== savedConfiguration.place ||
       reportIntervalSeconds !== savedConfiguration.reportIntervalSeconds ||
+      batteryFullAdcVoltage !== savedConfiguration.batteryFullAdcVoltage ||
+      batteryEmptyAdcVoltage !== savedConfiguration.batteryEmptyAdcVoltage ||
       pushToHomeAssistant !== savedConfiguration.pushToHomeAssistant ||
       homeAssistantDeviceName !== savedConfiguration.homeAssistantDeviceName)
+
+  const parsedBatteryFullAdcVoltage = Number(batteryFullAdcVoltage)
+  const parsedBatteryEmptyAdcVoltage = Number(batteryEmptyAdcVoltage)
+  const isBatteryEmptyAdcVoltageInvalid =
+    batteryEmptyAdcVoltage.trim() !== '' &&
+    (!Number.isFinite(parsedBatteryEmptyAdcVoltage) || parsedBatteryEmptyAdcVoltage < 0)
+  const isBatteryFullAdcVoltageInvalid =
+    batteryFullAdcVoltage.trim() !== '' &&
+    (!Number.isFinite(parsedBatteryFullAdcVoltage) ||
+      parsedBatteryFullAdcVoltage <= parsedBatteryEmptyAdcVoltage)
+  const isBatteryVoltageConfigurationValid =
+    batteryFullAdcVoltage.trim() !== '' &&
+    batteryEmptyAdcVoltage.trim() !== '' &&
+    Number.isFinite(parsedBatteryFullAdcVoltage) &&
+    Number.isFinite(parsedBatteryEmptyAdcVoltage) &&
+    parsedBatteryEmptyAdcVoltage >= 0 &&
+    parsedBatteryFullAdcVoltage > parsedBatteryEmptyAdcVoltage
 
   const isRegistrationFormComplete =
     name.trim() !== '' &&
     place.trim() !== '' &&
     reportIntervalSeconds.trim() !== '' &&
-    Number(reportIntervalSeconds) > 0
+    Number(reportIntervalSeconds) > 0 &&
+    isBatteryVoltageConfigurationValid
 
   const handleRegisterSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -625,6 +655,8 @@ export default function DeviceDetails() {
         name: name.trim(),
         place: place.trim(),
         reportIntervalSeconds: Number(reportIntervalSeconds),
+        batteryFullAdcVoltage: parsedBatteryFullAdcVoltage,
+        batteryEmptyAdcVoltage: parsedBatteryEmptyAdcVoltage,
         pushToHomeAssistant,
         homeAssistantDeviceName: getNormalizedHomeAssistantDeviceName(homeAssistantDeviceName),
       })
@@ -646,6 +678,8 @@ export default function DeviceDetails() {
         name: name.trim(),
         place: place.trim(),
         reportIntervalSeconds: Number(reportIntervalSeconds),
+        batteryFullAdcVoltage: parsedBatteryFullAdcVoltage,
+        batteryEmptyAdcVoltage: parsedBatteryEmptyAdcVoltage,
         pushToHomeAssistant,
         homeAssistantDeviceName: getNormalizedHomeAssistantDeviceName(homeAssistantDeviceName),
       })
@@ -999,6 +1033,42 @@ export default function DeviceDetails() {
                           required
                           fullWidth
                         />
+                        <TextField
+                          label="Battery 100% ADC voltage"
+                          value={batteryFullAdcVoltage}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setBatteryFullAdcVoltage(event.target.value)
+                          }}
+                          type="number"
+                          slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
+                          error={isBatteryFullAdcVoltageInvalid}
+                          helperText={
+                            isBatteryFullAdcVoltageInvalid
+                              ? 'Must be greater than the 0% ADC voltage.'
+                              : 'ADC voltage that represents a fully charged battery.'
+                          }
+                          required
+                          fullWidth
+                        />
+                        <TextField
+                          label="Battery 0% ADC voltage"
+                          value={batteryEmptyAdcVoltage}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setBatteryEmptyAdcVoltage(event.target.value)
+                          }}
+                          type="number"
+                          slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
+                          error={isBatteryEmptyAdcVoltageInvalid}
+                          helperText={
+                            isBatteryEmptyAdcVoltageInvalid
+                              ? 'Must be zero or greater.'
+                              : 'ADC voltage that represents an empty battery.'
+                          }
+                          required
+                          fullWidth
+                        />
                         <FormControlLabel
                           control={
                             <Switch
@@ -1087,6 +1157,42 @@ export default function DeviceDetails() {
                           required
                           fullWidth
                         />
+                        <TextField
+                          label="Battery 100% ADC voltage"
+                          value={batteryFullAdcVoltage}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setBatteryFullAdcVoltage(event.target.value)
+                          }}
+                          type="number"
+                          slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
+                          error={isBatteryFullAdcVoltageInvalid}
+                          helperText={
+                            isBatteryFullAdcVoltageInvalid
+                              ? 'Must be greater than the 0% ADC voltage.'
+                              : 'Changing these values immediately recalculates current and historical percentages.'
+                          }
+                          required
+                          fullWidth
+                        />
+                        <TextField
+                          label="Battery 0% ADC voltage"
+                          value={batteryEmptyAdcVoltage}
+                          onChange={(event) => {
+                            formDirtyRef.current = true
+                            setBatteryEmptyAdcVoltage(event.target.value)
+                          }}
+                          type="number"
+                          slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
+                          error={isBatteryEmptyAdcVoltageInvalid}
+                          helperText={
+                            isBatteryEmptyAdcVoltageInvalid
+                              ? 'Must be zero or greater.'
+                              : 'ADC voltage that represents an empty battery.'
+                          }
+                          required
+                          fullWidth
+                        />
                         <FormControlLabel
                           control={
                             <Switch
@@ -1119,7 +1225,7 @@ export default function DeviceDetails() {
                         <Button
                           type="submit"
                           variant="contained"
-                          disabled={actionLoading || !isConfigurationDirty}
+                          disabled={actionLoading || !isConfigurationDirty || !isBatteryVoltageConfigurationValid}
                           sx={{ alignSelf: 'flex-start' }}
                         >
                           {actionLoading ? 'Saving...' : 'Save changes'}

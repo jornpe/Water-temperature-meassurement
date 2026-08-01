@@ -32,33 +32,49 @@ public class DevicesController(
     [HttpGet]
     public async Task<ActionResult<IEnumerable<DeviceSummaryResponse>>> GetDevices()
     {
-        var devices = await dbContext.Devices
+        var snapshots = await dbContext.Devices
             .AsNoTracking()
             .OrderBy(device => device.Status == DeviceRegistrationStatus.Registered)
             .ThenBy(device => device.Place ?? string.Empty)
             .ThenBy(device => device.Name ?? device.DeviceIdentifier)
-            .Select(device => new DeviceSummaryResponse(
-                device.Id,
-                device.DeviceIdentifier,
-                device.Status == DeviceRegistrationStatus.Registered ? "registered" : "unregistered",
-                device.Name,
-                device.Place,
-                device.PushToHomeAssistant,
-                device.LatestTemperatureCelsius,
-                device.LatestBatteryPercentage,
-                device.LatestBatteryState == BatteryState.Charging || device.LatestBatteryChargeState == 1
-                    ? "Charging"
-                    : device.LatestBatteryState == BatteryState.Full || device.LatestBatteryChargeState == 2
-                        ? "Full"
-                        : device.LatestBatteryState == BatteryState.NotCharging || device.LatestBatteryChargeState == 0
-                            ? "Not charging"
-                            : device.LatestBatteryPercentage.HasValue
-                                ? "Unknown"
-                                : null,
-                device.LatestBatteryAtUtc,
-                device.LastUpdateReceivedAtUtc,
-                device.LastDiscoveredAtUtc))
+            .Select(device => new
+            {
+                Response = new DeviceSummaryResponse(
+                    device.Id,
+                    device.DeviceIdentifier,
+                    device.Status == DeviceRegistrationStatus.Registered ? "registered" : "unregistered",
+                    device.Name,
+                    device.Place,
+                    device.PushToHomeAssistant,
+                    device.LatestTemperatureCelsius,
+                    null,
+                    device.LatestBatteryState == BatteryState.Charging || device.LatestBatteryChargeState == 1
+                        ? "Charging"
+                        : device.LatestBatteryState == BatteryState.Full || device.LatestBatteryChargeState == 2
+                            ? "Full"
+                            : device.LatestBatteryState == BatteryState.NotCharging || device.LatestBatteryChargeState == 0
+                                ? "Not charging"
+                                : device.LatestBatteryAdcVoltage.HasValue
+                                    ? "Unknown"
+                                    : null,
+                    device.LatestBatteryAtUtc,
+                    device.LastUpdateReceivedAtUtc,
+                    device.LastDiscoveredAtUtc),
+                device.LatestBatteryAdcVoltage,
+                device.BatteryFullAdcVoltage,
+                device.BatteryEmptyAdcVoltage,
+            })
             .ToListAsync();
+
+        var devices = snapshots
+            .Select(snapshot => snapshot.Response with
+            {
+                LatestBatteryPercentage = BatteryPercentageCalculator.Calculate(
+                    snapshot.LatestBatteryAdcVoltage,
+                    snapshot.BatteryFullAdcVoltage,
+                    snapshot.BatteryEmptyAdcVoltage),
+            })
+            .ToList();
 
         return Ok(devices);
     }
@@ -66,90 +82,114 @@ public class DevicesController(
     [HttpGet("{id:int}")]
     public async Task<ActionResult<DeviceDetailResponse>> GetDevice(int id)
     {
-        var device = await dbContext.Devices
+        var snapshot = await dbContext.Devices
             .AsNoTracking()
             .Where(item => item.Id == id)
-            .Select(item => new DeviceDetailResponse(
-                item.Id,
-                item.DeviceIdentifier,
-                item.Status == DeviceRegistrationStatus.Registered ? "registered" : "unregistered",
-                item.Name,
-                item.Place,
-                item.PushToHomeAssistant,
-                item.HomeAssistantDeviceName ?? item.Name ?? item.DeviceIdentifier,
-                item.FirmwareVersion,
-                item.ReportIntervalSeconds,
-                item.CreatedAtUtc,
-                item.RegisteredAtUtc,
-                item.LastDiscoveredAtUtc,
-                item.LastSeenAtUtc,
-                item.LastUpdateReceivedAtUtc,
-                item.LatestTemperatureCelsius,
-                item.LatestTemperatureAtUtc,
-                new DeviceDesiredConfigurationResponse(
-                    item.DesiredConfigurationVersion,
+            .Select(item => new
+            {
+                Response = new DeviceDetailResponse(
+                    item.Id,
+                    item.DeviceIdentifier,
+                    item.Status == DeviceRegistrationStatus.Registered ? "registered" : "unregistered",
+                    item.Name,
+                    item.Place,
+                    item.PushToHomeAssistant,
+                    item.HomeAssistantDeviceName ?? item.Name ?? item.DeviceIdentifier,
+                    item.FirmwareVersion,
                     item.ReportIntervalSeconds,
-                    item.DesiredConfigurationUpdatedAtUtc),
-                new DeviceRuntimeConfigurationResponse(
-                    item.ReportedConfigurationVersion,
-                    item.ReportedReportIntervalSeconds,
-                    item.RuntimeConfigurationReportedAtUtc),
-                item.Status == DeviceRegistrationStatus.Registered
-                    && (item.ConfigurationSyncStatus != DeviceConfigurationSyncStatus.Synchronized
-                        || item.DesiredConfigurationVersion != item.ReportedConfigurationVersion
-                        || item.ReportIntervalSeconds != item.ReportedReportIntervalSeconds),
-                new DeviceConfigurationSyncStateResponse(
-                    item.ConfigurationSyncStatus == DeviceConfigurationSyncStatus.Synchronized
-                        ? "synchronized"
-                        : item.ConfigurationSyncStatus == DeviceConfigurationSyncStatus.Failed
-                            ? "failed"
-                            : "pending",
-                    item.ConfigurationSyncAttemptCount,
-                    DeviceConfigurationSyncPolicy.MaximumAttempts,
-                    item.ConfigurationSyncError,
-                    item.ConfigurationSyncStatusUpdatedAtUtc),
-                new DevicePositionSnapshotResponse(
-                    item.LatestLatitude,
-                    item.LatestLongitude,
-                    item.LatestAltitudeMeters,
-                    item.LatestGpsTimeUtc,
-                    item.LatestSpeedKnots,
-                    item.LatestHdop,
-                    item.LatestSatellitesVisible,
-                    item.LatestSatellitesUsed,
-                    item.LatestPositionAtUtc),
-                new DeviceNetworkDiagnosticsResponse(
-                    item.LatestNetworkTransport,
-                    new DeviceWifiDiagnosticsResponse(
-                        item.LatestWifiLocalIp,
-                        item.LatestWifiRssiDbm,
-                        item.LatestWifiSsid,
-                        item.LatestWifiBssid,
-                        item.LatestWifiChannel,
-                        item.LatestWifiGatewayIp,
-                        item.LatestWifiSubnetMask,
-                        item.LatestWifiDnsIp,
-                        item.LatestWifiMacAddress),
-                    new DeviceCellularDiagnosticsResponse(
-                        item.LatestCellularLocalIp,
-                        item.LatestCellularSimStatus,
-                        item.LatestCellularNetworkConnected,
-                        item.LatestCellularGprsConnected,
-                        item.LatestCellularOperator,
-                        item.LatestCellularSignalQuality)),
-                new DeviceBatteryDiagnosticsResponse(
-                    item.LatestBatteryModemReadingValid,
-                    item.LatestBatteryChargeState,
-                    item.LatestBatteryState,
-                    item.LatestBatteryPercentage,
-                    item.LatestBatteryModemMillivolts,
-                    item.LatestBatteryAdcVoltage,
-                    item.LatestBatteryAtUtc),
-                item.TemperatureHistory.Count,
-                item.PositionHistory.Count))
+                    item.BatteryFullAdcVoltage,
+                    item.BatteryEmptyAdcVoltage,
+                    item.CreatedAtUtc,
+                    item.RegisteredAtUtc,
+                    item.LastDiscoveredAtUtc,
+                    item.LastSeenAtUtc,
+                    item.LastUpdateReceivedAtUtc,
+                    item.LatestTemperatureCelsius,
+                    item.LatestTemperatureAtUtc,
+                    new DeviceDesiredConfigurationResponse(
+                        item.DesiredConfigurationVersion,
+                        item.ReportIntervalSeconds,
+                        item.DesiredConfigurationUpdatedAtUtc),
+                    new DeviceRuntimeConfigurationResponse(
+                        item.ReportedConfigurationVersion,
+                        item.ReportedReportIntervalSeconds,
+                        item.RuntimeConfigurationReportedAtUtc),
+                    item.Status == DeviceRegistrationStatus.Registered
+                        && (item.ConfigurationSyncStatus != DeviceConfigurationSyncStatus.Synchronized
+                            || item.DesiredConfigurationVersion != item.ReportedConfigurationVersion
+                            || item.ReportIntervalSeconds != item.ReportedReportIntervalSeconds),
+                    new DeviceConfigurationSyncStateResponse(
+                        item.ConfigurationSyncStatus == DeviceConfigurationSyncStatus.Synchronized
+                            ? "synchronized"
+                            : item.ConfigurationSyncStatus == DeviceConfigurationSyncStatus.Failed
+                                ? "failed"
+                                : "pending",
+                        item.ConfigurationSyncAttemptCount,
+                        DeviceConfigurationSyncPolicy.MaximumAttempts,
+                        item.ConfigurationSyncError,
+                        item.ConfigurationSyncStatusUpdatedAtUtc),
+                    new DevicePositionSnapshotResponse(
+                        item.LatestLatitude,
+                        item.LatestLongitude,
+                        item.LatestAltitudeMeters,
+                        item.LatestGpsTimeUtc,
+                        item.LatestSpeedKnots,
+                        item.LatestHdop,
+                        item.LatestSatellitesVisible,
+                        item.LatestSatellitesUsed,
+                        item.LatestPositionAtUtc),
+                    new DeviceNetworkDiagnosticsResponse(
+                        item.LatestNetworkTransport,
+                        new DeviceWifiDiagnosticsResponse(
+                            item.LatestWifiLocalIp,
+                            item.LatestWifiRssiDbm,
+                            item.LatestWifiSsid,
+                            item.LatestWifiBssid,
+                            item.LatestWifiChannel,
+                            item.LatestWifiGatewayIp,
+                            item.LatestWifiSubnetMask,
+                            item.LatestWifiDnsIp,
+                            item.LatestWifiMacAddress),
+                        new DeviceCellularDiagnosticsResponse(
+                            item.LatestCellularLocalIp,
+                            item.LatestCellularSimStatus,
+                            item.LatestCellularNetworkConnected,
+                            item.LatestCellularGprsConnected,
+                            item.LatestCellularOperator,
+                            item.LatestCellularSignalQuality)),
+                    new DeviceBatteryDiagnosticsResponse(
+                        item.LatestBatteryModemReadingValid,
+                        item.LatestBatteryChargeState,
+                        item.LatestBatteryState,
+                        null,
+                        item.LatestBatteryModemMillivolts,
+                        item.LatestBatteryAdcVoltage,
+                        item.LatestBatteryAtUtc),
+                    item.TemperatureHistory.Count,
+                    item.PositionHistory.Count),
+                item.LatestBatteryAdcVoltage,
+                item.BatteryFullAdcVoltage,
+                item.BatteryEmptyAdcVoltage,
+            })
             .SingleOrDefaultAsync();
 
-        return device is null ? NotFound() : Ok(device);
+        if (snapshot is null)
+        {
+            return NotFound();
+        }
+
+        var device = snapshot.Response with
+        {
+            Battery = snapshot.Response.Battery with
+            {
+                Percentage = BatteryPercentageCalculator.Calculate(
+                    snapshot.LatestBatteryAdcVoltage,
+                    snapshot.BatteryFullAdcVoltage,
+                    snapshot.BatteryEmptyAdcVoltage),
+            },
+        };
+
+        return Ok(device);
     }
 
     [HttpGet("{id:int}/positions")]
@@ -261,7 +301,13 @@ public class DevicesController(
         var device = await dbContext.Devices
             .AsNoTracking()
             .Where(item => item.Id == id)
-            .Select(item => new { item.Id, item.DeviceIdentifier })
+            .Select(item => new
+            {
+                item.Id,
+                item.DeviceIdentifier,
+                item.BatteryFullAdcVoltage,
+                item.BatteryEmptyAdcVoltage,
+            })
             .SingleOrDefaultAsync(cancellationToken);
 
         if (device is null)
@@ -293,7 +339,10 @@ public class DevicesController(
 
             if (index % sampleStride == 0)
             {
-                items.Add(ToBatteryHistoryResponse(entry));
+                items.Add(ToBatteryHistoryResponse(
+                    entry,
+                    device.BatteryFullAdcVoltage,
+                    device.BatteryEmptyAdcVoltage));
             }
 
             index += 1;
@@ -301,7 +350,10 @@ public class DevicesController(
 
         if (lastEntry is not null && (items.Count == 0 || items[^1].Id != lastEntry.Id))
         {
-            var lastResponse = ToBatteryHistoryResponse(lastEntry);
+            var lastResponse = ToBatteryHistoryResponse(
+                lastEntry,
+                device.BatteryFullAdcVoltage,
+                device.BatteryEmptyAdcVoltage);
             if (items.Count >= normalizedMaxPoints)
             {
                 items[^1] = lastResponse;
@@ -604,6 +656,14 @@ public class DevicesController(
             return BadRequest(new MessageResponse("Report interval must be greater than zero"));
         }
 
+        if (!TryValidateBatteryAdcVoltages(
+                request.BatteryFullAdcVoltage,
+                request.BatteryEmptyAdcVoltage,
+                out var batteryValidationMessage))
+        {
+            return BadRequest(new MessageResponse(batteryValidationMessage!));
+        }
+
         var device = await dbContext.Devices.FindAsync(id);
         if (device is null)
         {
@@ -626,6 +686,8 @@ public class DevicesController(
         device.PushToHomeAssistant = request.PushToHomeAssistant;
         device.HomeAssistantDeviceName = homeAssistantDeviceName;
         device.ReportIntervalSeconds = request.ReportIntervalSeconds;
+        device.BatteryFullAdcVoltage = request.BatteryFullAdcVoltage;
+        device.BatteryEmptyAdcVoltage = request.BatteryEmptyAdcVoltage;
         device.DesiredConfigurationVersion = 1;
         device.DesiredConfigurationUpdatedAtUtc = credential.CreatedAtUtc;
         device.Status = DeviceRegistrationStatus.Registered;
@@ -663,6 +725,14 @@ public class DevicesController(
             return BadRequest(new MessageResponse("Report interval must be greater than zero"));
         }
 
+        if (!TryValidateBatteryAdcVoltages(
+                request.BatteryFullAdcVoltage,
+                request.BatteryEmptyAdcVoltage,
+                out var batteryValidationMessage))
+        {
+            return BadRequest(new MessageResponse(batteryValidationMessage!));
+        }
+
         var device = await dbContext.Devices.FindAsync(id);
         if (device is null)
         {
@@ -690,6 +760,8 @@ public class DevicesController(
         device.Place = normalizedPlace;
         device.PushToHomeAssistant = request.PushToHomeAssistant;
         device.HomeAssistantDeviceName = homeAssistantDeviceName;
+        device.BatteryFullAdcVoltage = request.BatteryFullAdcVoltage;
+        device.BatteryEmptyAdcVoltage = request.BatteryEmptyAdcVoltage;
 
         if (reportIntervalChanged)
         {
@@ -873,17 +945,47 @@ public class DevicesController(
             entry.RecordedAtUtc);
     }
 
-    private static DeviceBatteryHistoryPointResponse ToBatteryHistoryResponse(DeviceBatteryHistory entry)
+    private static DeviceBatteryHistoryPointResponse ToBatteryHistoryResponse(
+        DeviceBatteryHistory entry,
+        float fullAdcVoltage,
+        float emptyAdcVoltage)
     {
         return new DeviceBatteryHistoryPointResponse(
             entry.Id,
             entry.ModemReadingValid,
             entry.ChargeState,
             entry.BatteryState,
-            entry.Percentage,
+            BatteryPercentageCalculator.Calculate(entry.AdcVoltage, fullAdcVoltage, emptyAdcVoltage) ?? 0,
             entry.ModemMillivolts,
             entry.AdcVoltage,
             entry.RecordedAtUtc);
+    }
+
+    private static bool TryValidateBatteryAdcVoltages(
+        float fullAdcVoltage,
+        float emptyAdcVoltage,
+        out string? validationMessage)
+    {
+        if (!float.IsFinite(fullAdcVoltage) || !float.IsFinite(emptyAdcVoltage))
+        {
+            validationMessage = "Battery ADC voltages must be finite numbers";
+            return false;
+        }
+
+        if (emptyAdcVoltage < 0)
+        {
+            validationMessage = "The battery 0% ADC voltage cannot be negative";
+            return false;
+        }
+
+        if (fullAdcVoltage <= emptyAdcVoltage)
+        {
+            validationMessage = "The battery 100% ADC voltage must be greater than the 0% ADC voltage";
+            return false;
+        }
+
+        validationMessage = null;
+        return true;
     }
 
     private static DeviceTemperatureHistoryPointResponse ToTemperatureHistoryResponse(DeviceTemperatureHistory entry)
