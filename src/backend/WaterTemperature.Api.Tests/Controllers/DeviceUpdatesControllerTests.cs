@@ -87,7 +87,6 @@ public class DeviceUpdatesControllerTests : IDisposable
         var device = await _dbContext.Devices.SingleAsync();
 
         Assert.Equal("device-1", response.DeviceId);
-        Assert.Equal(60, response.Configuration.ReportIntervalSeconds);
         Assert.Equal(21.75m, device.LatestTemperatureCelsius);
         Assert.Equal(52.1, device.LatestLatitude);
         Assert.Equal("wifi", device.LatestNetworkTransport);
@@ -98,7 +97,7 @@ public class DeviceUpdatesControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task Update_WithRuntimeConfigurationAndLogs_StoresCalculatedLogTimestamps()
+    public async Task Update_WithLogs_StoresCalculatedLogTimestamps()
     {
         var credential = _deviceApiKeyService.CreateCredential();
         _dbContext.Devices.Add(new Device
@@ -119,7 +118,6 @@ public class DeviceUpdatesControllerTests : IDisposable
             Position: null,
             Battery: null,
             Network: null,
-            RuntimeConfiguration: new DeviceRuntimeConfigurationUpdateRequest(2, 60),
             DeviceUptimeMs: 3000,
             Logs:
             [
@@ -134,10 +132,10 @@ public class DeviceUpdatesControllerTests : IDisposable
         var device = await _dbContext.Devices.SingleAsync();
         var logs = await _dbContext.DeviceLogEntries.OrderBy(entry => entry.TimestampUtc).ToListAsync();
 
-        Assert.Equal(3, response.Configuration.DesiredConfigurationVersion);
-        Assert.Equal(2, device.ReportedConfigurationVersion);
-        Assert.Equal(60, device.ReportedReportIntervalSeconds);
-        Assert.NotNull(device.RuntimeConfigurationReportedAtUtc);
+        Assert.Equal("device-1", response.DeviceId);
+        Assert.Null(device.ReportedConfigurationVersion);
+        Assert.Null(device.ReportedReportIntervalSeconds);
+        Assert.Null(device.RuntimeConfigurationReportedAtUtc);
         Assert.Equal(["boot", "connected"], logs.Select(entry => entry.Message).ToArray());
         Assert.Equal(response.ReceivedAtUtc.AddSeconds(-2), logs[0].TimestampUtc);
         Assert.Equal(response.ReceivedAtUtc.AddSeconds(-1), logs[1].TimestampUtc);

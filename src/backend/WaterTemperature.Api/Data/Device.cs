@@ -31,6 +31,13 @@ public class Device
     public int? ReportedConfigurationVersion { get; set; }
     public int? ReportedReportIntervalSeconds { get; set; }
     public DateTime? RuntimeConfigurationReportedAtUtc { get; set; }
+    public DeviceConfigurationSyncStatus ConfigurationSyncStatus { get; set; } = DeviceConfigurationSyncStatus.Pending;
+    public int ConfigurationSyncAttemptCount { get; set; }
+
+    [MaxLength(512)]
+    public string? ConfigurationSyncError { get; set; }
+
+    public DateTime? ConfigurationSyncStatusUpdatedAtUtc { get; set; }
 
     [MaxLength(50)]
     public string? FirmwareVersion { get; set; }

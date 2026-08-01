@@ -53,7 +53,9 @@ This repository is a small monorepo with a .NET backend API and a React + Vite f
 - The backend creates one unregistered device record per unique device ID and updates discovery timestamps on later discovery calls.
 - The frontend device inventory shows unregistered devices first and lets an authenticated admin register them with name, place, and report interval.
 - Registration generates a hashed device API key server-side. The plaintext key is only exposed back to the device through the pending discovery handoff path.
-- Devices send authenticated updates to `POST /api/devices/{deviceId}/updates` using `X-Api-Key`.
+- Devices authenticate configuration syncs and telemetry updates using `X-Api-Key`.
+- Devices synchronize runtime configuration through `POST /api/devices/{deviceId}/configuration`.
+- Devices send telemetry and logs through `POST /api/devices/{deviceId}/updates`.
 - Each device update refreshes the latest snapshot on the device record and appends temperature and position history rows for later trend views.
 - Admin cleanup operations are available for deleting a device or clearing temperature/position history independently.
 
@@ -65,12 +67,12 @@ This repository is a small monorepo with a .NET backend API and a React + Vite f
 - The backend now tracks both desired configuration and the runtime configuration last reported by the device.
 - Configuration sync status is version-based:
 	- `DesiredConfigurationVersion` increments when device-consumable settings change.
-	- The device reports its applied configuration version and applied report interval in each authenticated update.
-	- The frontend shows whether configuration is still pending on the device.
-- Device updates remain a single authenticated write call at `POST /api/devices/{deviceId}/updates`, now carrying:
-  - telemetry
-  - runtime configuration
-  - a batch of unsent device log lines
+	- The device reports its applied configuration version and report interval to `POST /api/devices/{deviceId}/configuration` and receives the desired configuration in the response.
+	- After applying a change, the device reads the configuration back from Preferences, verifies that the stored and in-memory values match, and sends a confirmation to the configuration endpoint.
+	- The backend independently compares the confirmed version and interval with the desired configuration. Only an exact match with successful device-side storage verification is marked synchronized.
+	- The device retries the complete apply/read-back/confirm cycle up to three times. A third failed confirmation is persisted as a configuration-sync failure.
+	- The frontend distinguishes pending, synchronized, and failed configuration states and shows the final verification error after retries are exhausted.
+- Device updates at `POST /api/devices/{deviceId}/updates` carry telemetry and a batch of unsent device log lines. Configuration is not included in either the update request or response.
 - The ESP32 keeps up to 25 unsent log lines in memory. A successful update removes the uploaded batch; a restart intentionally discards anything still queued.
 - Each log carries its `millis()` timestamp and each update carries the current device uptime. The backend converts those values to a UTC log timestamp and uses it for ordering and time filters.
 - `GET /api/devices/{id}/logs` supports newest-first cursor reads plus server-side `search`, `level`, `fromUtc`, and `toUtc` filters. The frontend polls with `afterId` for live lines and uses `beforeId` to load older matching history.

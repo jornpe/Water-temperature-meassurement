@@ -40,6 +40,13 @@ public record DeviceRuntimeConfigurationResponse(
     int? AppliedReportIntervalSeconds,
     DateTime? ReportedAtUtc);
 
+public record DeviceConfigurationSyncStateResponse(
+    string Status,
+    int AttemptCount,
+    int MaximumAttempts,
+    string? Error,
+    DateTime? UpdatedAtUtc);
+
 public record DevicePositionSnapshotResponse(
     double? Latitude,
     double? Longitude,
@@ -158,6 +165,7 @@ public record DeviceDetailResponse(
     DeviceDesiredConfigurationResponse DesiredConfiguration,
     DeviceRuntimeConfigurationResponse RuntimeConfiguration,
     bool HasPendingConfiguration,
+    DeviceConfigurationSyncStateResponse ConfigurationSync,
     DevicePositionSnapshotResponse Position,
     DeviceNetworkDiagnosticsResponse NetworkDiagnostics,
     DeviceBatteryDiagnosticsResponse Battery,
@@ -196,9 +204,24 @@ public record DeviceLogEntryRequest(
     string Message,
     string? Level);
 
-public record DeviceRuntimeConfigurationUpdateRequest(
-    int? AppliedConfigurationVersion,
-    int? AppliedReportIntervalSeconds);
+public record DeviceConfigurationSyncRequest(
+    int AppliedConfigurationVersion,
+    int AppliedReportIntervalSeconds,
+    int SyncAttempt,
+    bool IsConfirmation,
+    bool StorageVerified);
+
+public record DeviceConfigurationSyncResponse(
+    string DeviceId,
+    DeviceConfigurationResponse Configuration,
+    bool IsSynchronized,
+    int MaximumAttempts,
+    DateTime ReceivedAtUtc);
+
+public static class DeviceConfigurationSyncPolicy
+{
+    public const int MaximumAttempts = 3;
+}
 
 public record DevicePositionUpdateRequest(
     double Latitude,
@@ -240,7 +263,6 @@ public record DeviceUpdateRequest(
     DevicePositionUpdateRequest? Position,
     Battery? Battery,
     DeviceNetworkDiagnosticsUpdateRequest? Network,
-    DeviceRuntimeConfigurationUpdateRequest? RuntimeConfiguration = null,
     long? DeviceUptimeMs = null,
     IReadOnlyList<DeviceLogEntryRequest>? Logs = null);
 
@@ -262,7 +284,6 @@ public record Battery(
 
 public record DeviceUpdateResponse(
     string DeviceId,
-    DeviceConfigurationResponse Configuration,
     DateTime ReceivedAtUtc);
 
 public record DeviceLogEntryResponse(

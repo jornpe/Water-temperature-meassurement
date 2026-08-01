@@ -151,13 +151,6 @@ public class DeviceUpdatesController(
             }
         }
 
-        if (request.RuntimeConfiguration is not null)
-        {
-            device.ReportedConfigurationVersion = request.RuntimeConfiguration.AppliedConfigurationVersion;
-            device.ReportedReportIntervalSeconds = request.RuntimeConfiguration.AppliedReportIntervalSeconds;
-            device.RuntimeConfigurationReportedAtUtc = now;
-        }
-
         if (request.Logs is { Count: > 0 })
         {
             var validLogs = request.Logs
@@ -187,9 +180,6 @@ public class DeviceUpdatesController(
             await homeAssistantMqttSyncService.PublishDeviceStateAsync(device.Id);
         }
 
-        return Ok(new DeviceUpdateResponse(
-            device.DeviceIdentifier,
-            new DeviceConfigurationResponse(device.ReportIntervalSeconds, device.DesiredConfigurationVersion),
-            now));
+        return Ok(new DeviceUpdateResponse(device.DeviceIdentifier, now));
     }
 }

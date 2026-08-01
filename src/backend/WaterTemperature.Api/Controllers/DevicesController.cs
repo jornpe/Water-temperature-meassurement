@@ -95,7 +95,19 @@ public class DevicesController(
                     item.ReportedReportIntervalSeconds,
                     item.RuntimeConfigurationReportedAtUtc),
                 item.Status == DeviceRegistrationStatus.Registered
-                    && item.DesiredConfigurationVersion > (item.ReportedConfigurationVersion ?? 0),
+                    && (item.ConfigurationSyncStatus != DeviceConfigurationSyncStatus.Synchronized
+                        || item.DesiredConfigurationVersion != item.ReportedConfigurationVersion
+                        || item.ReportIntervalSeconds != item.ReportedReportIntervalSeconds),
+                new DeviceConfigurationSyncStateResponse(
+                    item.ConfigurationSyncStatus == DeviceConfigurationSyncStatus.Synchronized
+                        ? "synchronized"
+                        : item.ConfigurationSyncStatus == DeviceConfigurationSyncStatus.Failed
+                            ? "failed"
+                            : "pending",
+                    item.ConfigurationSyncAttemptCount,
+                    DeviceConfigurationSyncPolicy.MaximumAttempts,
+                    item.ConfigurationSyncError,
+                    item.ConfigurationSyncStatusUpdatedAtUtc),
                 new DevicePositionSnapshotResponse(
                     item.LatestLatitude,
                     item.LatestLongitude,
@@ -684,6 +696,10 @@ public class DevicesController(
             device.ReportIntervalSeconds = request.ReportIntervalSeconds;
             device.DesiredConfigurationVersion += 1;
             device.DesiredConfigurationUpdatedAtUtc = now;
+            device.ConfigurationSyncStatus = DeviceConfigurationSyncStatus.Pending;
+            device.ConfigurationSyncAttemptCount = 0;
+            device.ConfigurationSyncError = null;
+            device.ConfigurationSyncStatusUpdatedAtUtc = now;
         }
 
         await dbContext.SaveChangesAsync();

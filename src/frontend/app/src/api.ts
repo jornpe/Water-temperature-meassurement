@@ -53,6 +53,14 @@ export interface DeviceRuntimeConfiguration {
   reportedAtUtc?: string | null
 }
 
+export interface DeviceConfigurationSyncState {
+  status: 'pending' | 'synchronized' | 'failed'
+  attemptCount: number
+  maximumAttempts: number
+  error?: string | null
+  updatedAtUtc?: string | null
+}
+
 export interface DeviceSummary {
   id: number
   deviceId: string
@@ -205,6 +213,7 @@ export interface DeviceDetail {
   desiredConfiguration: DeviceDesiredConfiguration
   runtimeConfiguration: DeviceRuntimeConfiguration
   hasPendingConfiguration: boolean
+  configurationSync: DeviceConfigurationSyncState
   position: DevicePositionSnapshot
   networkDiagnostics: DeviceNetworkDiagnostics
   battery: DeviceBatteryDiagnostics

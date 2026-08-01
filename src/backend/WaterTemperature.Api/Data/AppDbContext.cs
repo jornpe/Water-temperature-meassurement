@@ -35,6 +35,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(device => device.LastDiscoveryTransport).HasMaxLength(32);
             entity.Property(device => device.ApiKeyHash).HasMaxLength(256);
             entity.Property(device => device.PendingApiKeyProtected).HasMaxLength(1024);
+            entity.Property(device => device.ConfigurationSyncStatus).HasConversion<string>().HasMaxLength(32);
+            entity.Property(device => device.ConfigurationSyncError).HasMaxLength(512);
             entity.Property(device => device.LatestNetworkTransport).HasMaxLength(32);
             entity.Property(device => device.LatestWifiLocalIp).HasMaxLength(64);
             entity.Property(device => device.LatestWifiSsid).HasMaxLength(128);

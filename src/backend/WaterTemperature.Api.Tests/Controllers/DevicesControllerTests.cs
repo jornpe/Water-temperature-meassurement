@@ -219,6 +219,64 @@ public class DevicesControllerTests : IDisposable
         Assert.Equal(2, response.DesiredConfiguration.Version);
         Assert.Equal("Pool Sensor Custom", response.HomeAssistantDeviceName);
         Assert.Equal(1, response.RuntimeConfiguration.AppliedConfigurationVersion);
+        Assert.Equal("pending", response.ConfigurationSync.Status);
+        Assert.Equal(0, response.ConfigurationSync.AttemptCount);
+        Assert.Null(response.ConfigurationSync.Error);
+    }
+
+    [Fact]
+    public async Task GetDevice_WithMatchingVersionButWrongInterval_RemainsPending()
+    {
+        var device = new Device
+        {
+            DeviceIdentifier = "device-1",
+            Status = DeviceRegistrationStatus.Registered,
+            ReportIntervalSeconds = 300,
+            DesiredConfigurationVersion = 2,
+            ReportedConfigurationVersion = 2,
+            ReportedReportIntervalSeconds = 120,
+            ConfigurationSyncStatus = DeviceConfigurationSyncStatus.Failed,
+            ConfigurationSyncAttemptCount = 3,
+            ConfigurationSyncError = "Stored interval did not match.",
+            ConfigurationSyncStatusUpdatedAtUtc = DateTime.UtcNow,
+        };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetDevice(device.Id);
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<DeviceDetailResponse>(okResult.Value);
+
+        Assert.True(response.HasPendingConfiguration);
+        Assert.Equal("failed", response.ConfigurationSync.Status);
+        Assert.Equal(3, response.ConfigurationSync.AttemptCount);
+        Assert.Equal("Stored interval did not match.", response.ConfigurationSync.Error);
+    }
+
+    [Fact]
+    public async Task GetDevice_WithMatchingValuesButFailedStorageVerification_RemainsPending()
+    {
+        var device = new Device
+        {
+            DeviceIdentifier = "device-1",
+            Status = DeviceRegistrationStatus.Registered,
+            ReportIntervalSeconds = 300,
+            DesiredConfigurationVersion = 2,
+            ReportedConfigurationVersion = 2,
+            ReportedReportIntervalSeconds = 300,
+            ConfigurationSyncStatus = DeviceConfigurationSyncStatus.Failed,
+            ConfigurationSyncAttemptCount = 3,
+            ConfigurationSyncError = "Stored configuration could not be verified.",
+        };
+        _dbContext.Devices.Add(device);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GetDevice(device.Id);
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<DeviceDetailResponse>(okResult.Value);
+
+        Assert.True(response.HasPendingConfiguration);
+        Assert.Equal("failed", response.ConfigurationSync.Status);
     }
 
     [Fact]

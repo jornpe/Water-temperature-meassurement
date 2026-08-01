@@ -26,6 +26,7 @@ constexpr uint8_t SIM7000_PREFERRED_MODE_CAT_M = 1;
 constexpr uint32_t DEFAULT_REPORT_INTERVAL_SECONDS = 30;
 constexpr uint32_t DISCOVERY_INTERVAL_MS = 10000;
 constexpr uint32_t POST_DISCOVERY_SLEEP_SECONDS = 10;
+constexpr uint8_t MAX_CONFIGURATION_SYNC_ATTEMPTS = 3;
 constexpr float BATTERY_EMPTY_VOLTAGE = 2.5687F;
 constexpr float BATTERY_FULL_VOLTAGE = 3.5627F;
 constexpr size_t MAX_LOGS_PER_UPDATE = 1000;
@@ -208,6 +209,8 @@ struct HttpResponse
     String body;
     bool transportOk = false;
 };
+
+bool updateConfig();
 
 bool intervalElapsed(const uint32_t now, const uint32_t previous, const uint32_t interval)
 {
@@ -418,15 +421,19 @@ bool savePersistedDeviceState()
     return intervalSaved && configurationVersionSaved && keySaved;
 }
 
-void persistReportInterval(const uint32_t intervalSeconds)
+bool readPersistedConfiguration(uint32_t& configurationVersion, uint32_t& intervalSeconds)
 {
-    if (intervalSeconds == 0)
+    if (!preferences.begin("device", true))
     {
-        return;
+        logError("Could not open Preferences to verify the stored configuration.");
+        return false;
     }
 
-    reportIntervalSeconds = intervalSeconds;
-    savePersistedDeviceState();
+    configurationVersion = preferences.getUInt("cfgVer", 0);
+    intervalSeconds = preferences.getUInt("reportSec", 0);
+    preferences.end();
+
+    return intervalSeconds > 0;
 }
 
 void storeApiKey(const String& apiKey)
@@ -443,36 +450,6 @@ void clearStoredApiKey()
     lastDiscoveryAttemptMs = 0;
     lastUpdateAttemptMs = 0;
     savePersistedDeviceState();
-}
-
-void applyServerConfiguration(JsonVariantConst configuration)
-{
-    if (configuration.isNull())
-    {
-        return;
-    }
-
-    const uint32_t desiredConfigurationVersion = configuration["desiredConfigurationVersion"] | appliedConfigurationVersion;
-    const uint32_t intervalSeconds = configuration["reportIntervalSeconds"] | reportIntervalSeconds;
-    bool changed = false;
-
-    if (intervalSeconds > 0 && intervalSeconds != reportIntervalSeconds)
-    {
-        reportIntervalSeconds = intervalSeconds;
-        changed = true;
-        logInfo("Applying new report interval: " + String(intervalSeconds) + " seconds");
-    }
-
-    if (desiredConfigurationVersion > 0 && desiredConfigurationVersion != appliedConfigurationVersion)
-    {
-        appliedConfigurationVersion = desiredConfigurationVersion;
-        changed = true;
-    }
-
-    if (changed)
-    {
-        savePersistedDeviceState();
-    }
 }
 
 void pulseModemPowerKey()
@@ -768,21 +745,20 @@ bool connectNetwork()
 {
     lastNetworkAttemptMs = millis();
 
+    const bool connected = connectWifi()
+        || (config.cellular.enabled && connectCellular());
 
-    if (connectWifi())
+    if (!connected)
     {
-        return true;
+        activeTransport = NetworkTransport::None;
+        logWarning("No network connection is currently available.");
+        return false;
     }
 
-    if (config.cellular.enabled && connectCellular())
-    {
-        return true;
-    }
+    // Synchronize and confirm configuration before sending telemetry.
+    updateConfig();
 
-
-    activeTransport = NetworkTransport::None;
-    logWarning("No network connection is currently available.");
-    return false;
+    return true;
 }
 
 void ensureNetworkConnection()
@@ -845,10 +821,6 @@ String buildUpdatePayload(const uint32_t now)
         document["temperature"] = latestTemperatureStatus.celsius;
     }
 
-    JsonObject runtimeConfiguration = document["runtimeConfiguration"].to<JsonObject>();
-    runtimeConfiguration["appliedConfigurationVersion"] = appliedConfigurationVersion;
-    runtimeConfiguration["appliedReportIntervalSeconds"] = reportIntervalSeconds;
-
     if (latestFix.valid)
     {
         JsonObject position = document["position"].to<JsonObject>();
@@ -900,6 +872,25 @@ String buildUpdatePayload(const uint32_t now)
             log["level"] = entry.level;
         }
     }
+
+    String payload;
+    serializeJson(document, payload);
+    return payload;
+}
+
+String buildConfigurationSyncPayload(
+    const uint32_t configurationVersion,
+    const uint32_t intervalSeconds,
+    const uint8_t syncAttempt,
+    const bool isConfirmation,
+    const bool storageVerified)
+{
+    JsonDocument document;
+    document["appliedConfigurationVersion"] = configurationVersion;
+    document["appliedReportIntervalSeconds"] = intervalSeconds;
+    document["syncAttempt"] = syncAttempt;
+    document["isConfirmation"] = isConfirmation;
+    document["storageVerified"] = storageVerified;
 
     String payload;
     serializeJson(document, payload);
@@ -1013,6 +1004,258 @@ HttpResponse sendJsonPost(const String& path, const String& payload, const Strin
     return response;
 }
 
+bool updateConfig()
+{
+    if (deviceMode != DeviceMode::Operational || deviceApiKey.isEmpty())
+    {
+        logInfo("Skipping configuration check until the device has an API key.");
+        return false;
+    }
+
+    if (!networkIsConnected())
+    {
+        logWarning("Skipping configuration check because no network is connected.");
+        return false;
+    }
+
+    const String endpoint = buildApiPath(String("/api/devices/") + deviceId + "/configuration");
+
+    auto synchronizeWithBackend = [&endpoint](
+        const uint32_t storedConfigurationVersion,
+        const uint32_t storedIntervalSeconds,
+        const uint8_t syncAttempt,
+        const bool isConfirmation,
+        const bool storageVerified,
+        uint32_t& desiredConfigurationVersion,
+        uint32_t& desiredReportIntervalSeconds,
+        bool& backendConfirmed) -> bool
+    {
+        const HttpResponse response = sendJsonPost(
+            endpoint,
+            buildConfigurationSyncPayload(
+                storedConfigurationVersion,
+                storedIntervalSeconds,
+                syncAttempt,
+                isConfirmation,
+                storageVerified),
+            deviceApiKey);
+
+        if (!response.transportOk)
+        {
+            logWarning("Configuration sync failed without a valid HTTP response.");
+            return false;
+        }
+
+        logInfo("Configuration sync status: " + String(response.statusCode));
+
+        if (response.statusCode == 401)
+        {
+            logWarning("Device credential was rejected. Clearing API key and returning to discovery mode.");
+            clearStoredApiKey();
+            return false;
+        }
+
+        if (response.statusCode != 200)
+        {
+            logWarning("Configuration sync did not return a usable response.");
+            return false;
+        }
+
+        JsonDocument document;
+        const auto error = deserializeJson(document, response.body);
+
+        if (error)
+        {
+            logError("Configuration JSON parse failed: " + String(error.c_str()));
+            return false;
+        }
+
+        const String responseDeviceId = document["deviceId"] | "";
+        if (responseDeviceId != deviceId)
+        {
+            logError("Configuration response device ID does not match this device.");
+            return false;
+        }
+
+        const JsonVariantConst configuration = document["configuration"];
+        if (!configuration.is<JsonObjectConst>())
+        {
+            logError("Configuration response does not contain a configuration object.");
+            return false;
+        }
+
+        const JsonVariantConst versionValue = configuration["desiredConfigurationVersion"];
+        const JsonVariantConst intervalValue = configuration["reportIntervalSeconds"];
+        const JsonVariantConst confirmedValue = document["isSynchronized"];
+        const JsonVariantConst maximumAttemptsValue = document["maximumAttempts"];
+
+        if (!versionValue.is<uint32_t>()
+            || !intervalValue.is<uint32_t>()
+            || !confirmedValue.is<bool>()
+            || !maximumAttemptsValue.is<uint8_t>())
+        {
+            logError("Configuration response contains invalid synchronization values.");
+            return false;
+        }
+
+        desiredConfigurationVersion = versionValue.as<uint32_t>();
+        desiredReportIntervalSeconds = intervalValue.as<uint32_t>();
+        backendConfirmed = confirmedValue.as<bool>();
+
+        if (desiredConfigurationVersion == 0 || desiredReportIntervalSeconds == 0)
+        {
+            logError("Configuration version and report interval must be greater than zero.");
+            return false;
+        }
+
+        if (maximumAttemptsValue.as<uint8_t>() != MAX_CONFIGURATION_SYNC_ATTEMPTS)
+        {
+            logError("Backend and firmware configuration retry limits do not match.");
+            return false;
+        }
+
+        const bool expectedBackendConfirmation = storageVerified
+            && storedConfigurationVersion == desiredConfigurationVersion
+            && storedIntervalSeconds == desiredReportIntervalSeconds;
+
+        if (backendConfirmed != expectedBackendConfirmation)
+        {
+            logError("Backend configuration evaluation does not match the reported stored values.");
+            return false;
+        }
+
+        return true;
+    };
+
+    for (uint8_t attempt = 1; attempt <= MAX_CONFIGURATION_SYNC_ATTEMPTS; ++attempt)
+    {
+        logInfo(
+            "Configuration application attempt "
+            + String(attempt)
+            + " of "
+            + String(MAX_CONFIGURATION_SYNC_ATTEMPTS)
+            + ".");
+
+        uint32_t storedConfigurationVersion = appliedConfigurationVersion;
+        uint32_t storedReportIntervalSeconds = reportIntervalSeconds;
+        const bool storedConfigurationRead = readPersistedConfiguration(
+            storedConfigurationVersion,
+            storedReportIntervalSeconds);
+        const bool currentStorageVerified = storedConfigurationRead
+            && storedConfigurationVersion == appliedConfigurationVersion
+            && storedReportIntervalSeconds == reportIntervalSeconds;
+
+        if (!currentStorageVerified)
+        {
+            logWarning("Stored configuration does not match the in-memory configuration.");
+        }
+
+        uint32_t desiredConfigurationVersion = appliedConfigurationVersion;
+        uint32_t desiredReportIntervalSeconds = reportIntervalSeconds;
+        bool backendConfirmed = false;
+
+        if (!synchronizeWithBackend(
+                storedConfigurationVersion,
+                storedReportIntervalSeconds,
+                attempt,
+                false,
+                currentStorageVerified,
+                desiredConfigurationVersion,
+                desiredReportIntervalSeconds,
+                backendConfirmed))
+        {
+            return false;
+        }
+
+        if (backendConfirmed)
+        {
+            logInfo("Stored configuration is verified and confirmed by the backend.");
+            return true;
+        }
+
+        const uint32_t previousConfigurationVersion = appliedConfigurationVersion;
+        const uint32_t previousReportIntervalSeconds = reportIntervalSeconds;
+
+        appliedConfigurationVersion = desiredConfigurationVersion;
+        reportIntervalSeconds = desiredReportIntervalSeconds;
+
+        const bool configurationStored = savePersistedDeviceState();
+        uint32_t confirmedStoredVersion = 0;
+        uint32_t confirmedStoredIntervalSeconds = 0;
+        const bool confirmationRead = readPersistedConfiguration(
+            confirmedStoredVersion,
+            confirmedStoredIntervalSeconds);
+        bool localConfigurationVerified = configurationStored
+            && confirmationRead
+            && confirmedStoredVersion == appliedConfigurationVersion
+            && confirmedStoredIntervalSeconds == reportIntervalSeconds
+            && appliedConfigurationVersion == desiredConfigurationVersion
+            && reportIntervalSeconds == desiredReportIntervalSeconds;
+
+        if (!localConfigurationVerified)
+        {
+            appliedConfigurationVersion = previousConfigurationVersion;
+            reportIntervalSeconds = previousReportIntervalSeconds;
+
+            const bool previousConfigurationRestored = savePersistedDeviceState();
+            const bool restoredConfigurationRead = readPersistedConfiguration(
+                confirmedStoredVersion,
+                confirmedStoredIntervalSeconds);
+
+            localConfigurationVerified = previousConfigurationRestored
+                && restoredConfigurationRead
+                && confirmedStoredVersion == appliedConfigurationVersion
+                && confirmedStoredIntervalSeconds == reportIntervalSeconds;
+
+            if (!localConfigurationVerified)
+            {
+                logError("Could not restore the previous persisted configuration.");
+            }
+
+            logError("Desired configuration could not be stored and verified.");
+        }
+
+        uint32_t confirmationDesiredVersion = desiredConfigurationVersion;
+        uint32_t confirmationDesiredIntervalSeconds = desiredReportIntervalSeconds;
+
+        if (!synchronizeWithBackend(
+                confirmedStoredVersion,
+                confirmedStoredIntervalSeconds,
+                attempt,
+                true,
+                localConfigurationVerified,
+                confirmationDesiredVersion,
+                confirmationDesiredIntervalSeconds,
+                backendConfirmed))
+        {
+            return false;
+        }
+
+        const bool confirmedValuesMatchMemory = localConfigurationVerified
+            && confirmedStoredVersion == appliedConfigurationVersion
+            && confirmedStoredIntervalSeconds == reportIntervalSeconds;
+
+        if (backendConfirmed && confirmedValuesMatchMemory)
+        {
+            logInfo(
+                "Configuration version "
+                + String(appliedConfigurationVersion)
+                + " with report interval "
+                + String(reportIntervalSeconds)
+                + " seconds is stored, verified, and confirmed by the backend.");
+            return true;
+        }
+
+        logWarning(
+            "Configuration attempt "
+            + String(attempt)
+            + " was not confirmed; retrying if attempts remain.");
+    }
+
+    logError("Configuration sync failed after three attempts; the backend will show the failure.");
+    return false;
+}
+
 void handleDiscoveryResponse(const HttpResponse& response)
 {
     if (!response.transportOk)
@@ -1037,13 +1280,12 @@ void handleDiscoveryResponse(const HttpResponse& response)
         return;
     }
 
-    applyServerConfiguration(document["configuration"]);
-
     const String apiKey = document["apiKey"] | "";
     if (!apiKey.isEmpty())
     {
         logInfo("Received device API key from discovery response.");
         storeApiKey(apiKey);
+        updateConfig();
     }
 }
 
@@ -1073,17 +1315,6 @@ void handleUpdateResponse(const HttpResponse& response)
         logWarning("Update request failed without changing provisioning state.");
         return;
     }
-
-    JsonDocument document;
-    const auto error = deserializeJson(document, response.body);
-
-    if (error)
-    {
-        logError("Update JSON parse failed: " + String(error.c_str()));
-        return;
-    }
-
-    applyServerConfiguration(document["configuration"]);
 }
 
 void runDiscoveryMode(const uint32_t now)
@@ -1379,7 +1610,7 @@ void setup()
     readTemperature();
 
     connectNetwork();
-    
+
     ensureGpsReady();
     pollGps();
 

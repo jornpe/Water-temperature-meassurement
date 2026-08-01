@@ -728,8 +728,20 @@ export default function DeviceDetails() {
             />
             {device?.status === 'registered' && (
               <Chip
-                label={device.hasPendingConfiguration ? 'Config pending sync' : 'Config applied'}
-                color={device.hasPendingConfiguration ? 'warning' : 'success'}
+                label={
+                  device.configurationSync.status === 'failed'
+                    ? 'Config sync failed'
+                    : device.hasPendingConfiguration
+                      ? 'Config pending sync'
+                      : 'Config applied'
+                }
+                color={
+                  device.configurationSync.status === 'failed'
+                    ? 'error'
+                    : device.hasPendingConfiguration
+                      ? 'warning'
+                      : 'success'
+                }
                 variant={device.hasPendingConfiguration ? 'filled' : 'outlined'}
                 size="small"
               />
@@ -1126,7 +1138,20 @@ export default function DeviceDetails() {
                     <Typography variant="h6" sx={{ mb: 2 }}>
                       Configuration sync state
                     </Typography>
+                    {device.configurationSync.status === 'failed' && (
+                      <Alert severity="error" sx={{ mb: 2 }}>
+                        Configuration verification failed after {device.configurationSync.attemptCount} of{' '}
+                        {device.configurationSync.maximumAttempts} attempts.
+                        {device.configurationSync.error ? ` ${device.configurationSync.error}` : ''}
+                      </Alert>
+                    )}
                     <Stack direction="row" flexWrap="wrap" gap={2}>
+                      <DetailRow label="Sync status" value={device.configurationSync.status} />
+                      <DetailRow
+                        label="Sync attempts"
+                        value={`${device.configurationSync.attemptCount} / ${device.configurationSync.maximumAttempts}`}
+                      />
+                      <DetailRow label="Sync evaluated" value={formatDate(device.configurationSync.updatedAtUtc)} />
                       <DetailRow label="Desired version" value={String(device.desiredConfiguration.version)} />
                       <DetailRow label="Desired interval" value={formatValue(device.desiredConfiguration.reportIntervalSeconds, ' seconds')} />
                       <DetailRow label="Desired updated" value={formatDate(device.desiredConfiguration.updatedAtUtc)} />
